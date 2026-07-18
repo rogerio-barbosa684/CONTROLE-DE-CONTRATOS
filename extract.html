@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Extrair Dados</title>
+<style>
+*{box-sizing:border-box}body{font-family:Arial,sans-serif;background:#f0f2f5;padding:40px;text-align:center}
+.box{background:#fff;border-radius:12px;padding:32px;max-width:600px;margin:0 auto;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+h1{color:#17324d;font-size:20px}
+pre{background:#f4f7fb;padding:16px;border-radius:8px;text-align:left;font-size:12px;max-height:300px;overflow:auto;margin:16px 0}
+.btn{padding:12px 24px;border:0;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px;margin:8px}
+.bp{background:#17324d;color:#fff}.bg{background:#1f7a43;color:#fff}
+.hidden{display:none}.msg{padding:12px;border-radius:8px;margin:12px 0}
+.ok{background:#dff5e5;color:#175a31}.erro{background:#ffe1e1;color:#8f1b1b}
+</style></head><body>
+<div class="box">
+<h1>Extrair Dados do Navegador</h1>
+<p>Clique no botao para enviar os dados salvos neste navegador para o servidor.</p>
+<button class="btn bp" onclick="extrair()">Extrair e Enviar Dados</button>
+<div id="status" class="hidden"></div>
+<pre id="output">Aguardando...</pre>
+</div>
+<script>
+function extrair(){
+  var btn = document.querySelector('.btn.bp');
+  btn.disabled = true;
+  btn.textContent = 'Extraindo...';
+  var status = document.getElementById('status');
+  var output = document.getElementById('output');
+
+  var contratos = JSON.parse(localStorage.getItem('contratos') || '[]');
+  var pagamentos = JSON.parse(localStorage.getItem('pagamentos') || '[]');
+  var usuarios = JSON.parse(localStorage.getItem('usuarios') || '[]');
+
+  output.textContent = JSON.stringify({contratos, pagamentos, usuarios}, null, 2);
+
+  if (!contratos.length && !pagamentos.length) {
+    status.className = 'msg erro';
+    status.textContent = 'Nenhum dado encontrado no localStorage!';
+    status.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Extrair e Enviar Dados';
+    return;
+  }
+
+  fetch('/api/sync', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({contratos, pagamentos, usuarios})
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(dados){
+    if(dados.ok){
+      status.className = 'msg ok';
+      status.textContent = contratos.length + ' contrato(s) e ' + pagamentos.length + ' pagamento(s) enviados para o servidor!';
+      status.style.display = 'block';
+    }
+  })
+  .catch(function(err){
+    status.className = 'msg erro';
+    status.textContent = 'Erro ao enviar: ' + err;
+    status.style.display = 'block';
+  })
+  .finally(function(){
+    btn.disabled = false;
+    btn.textContent = 'Extrair e Enviar Dados';
+  });
+}
+</script>
+</body></html>

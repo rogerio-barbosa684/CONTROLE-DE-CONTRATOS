@@ -1,0 +1,19 @@
+{
+  "name": "controle-contratos",
+  "version": "1.0.0",
+  "description": "Sistema de Controle de Contratos e Pagamentos",
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.0",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.10.0"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^3.1.0",
+    "sqlite3": "^5.1.7"
+  },
+  "scripts": {
+    "migrate": "node supabase/migrate.js",
+    "dev": "netlify dev"
+  }
+}

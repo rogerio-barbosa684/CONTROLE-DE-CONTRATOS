@@ -1,0 +1,6 @@
+0 e-mail(s) enviado(s). Erros: rogerio.barbosa@idealalimentacao.com.br: (535, b'5.7.8 Username and Password not accepted. For more information, go to\n5.7.8 https://support.google.com/mail/?p=BadCredentials 00721157ae682-81e6c1ee792sm28191997b3.38 - gsmtp')
+
+
+
+
+Nenhum contrato pendente para os destinatarios cadastrados.
