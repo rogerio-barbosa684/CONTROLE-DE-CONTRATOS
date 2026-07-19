@@ -65,23 +65,37 @@ function checkPassword(password, hash) {
     if (!hash || !hash.includes('$')) return resolve(false)
     const parts = hash.split('$')
     if (parts.length < 3) return resolve(false)
-    const salt = parts[1]
-    const storedHash = parts[2]
-    crypto.pbkdf2(password, salt, 310000, 32, 'sha256', (err, key) => {
-      if (err) reject(err)
-      else resolve(key.toString('hex') === storedHash)
-    })
+    if (hash.startsWith('scrypt:')) {
+      const params = parts[0].split(':')
+      const N = parseInt(params[1]) || 32768
+      const r = parseInt(params[2]) || 8
+      const p = parseInt(params[3]) || 1
+      const salt = parts[1]
+      const storedHash = parts[2]
+      crypto.scrypt(password, salt, 64, { N, r, p }, (err, key) => {
+        if (err) reject(err)
+        else resolve(key.toString('hex') === storedHash)
+      })
+    } else {
+      const salt = parts[1]
+      const storedHash = parts[2]
+      crypto.pbkdf2(password, salt, 310000, 32, 'sha256', (err, key) => {
+        if (err) reject(err)
+        else resolve(key.toString('hex') === storedHash)
+      })
+    }
   })
 }
 
-function generateCsrf() {
-  return crypto.randomBytes(32).toString('hex')
+function deriveCsrf(userId) {
+  const h = crypto.createHmac('sha256', JWT_SECRET)
+  h.update(String(userId))
+  return h.digest('hex')
 }
 
-function validateCsrf(cookieHeader, bodyCsrf) {
-  if (!bodyCsrf) return false
-  const cookies = parseCookies(cookieHeader)
-  return cookies['csrf'] === bodyCsrf
+function validateCsrf(user, bodyCsrf) {
+  if (!user || !bodyCsrf) return false
+  return deriveCsrf(user.id) === bodyCsrf
 }
 
 function requireAdmin(user) {
@@ -292,11 +306,12 @@ export async function handler(event) {
   const { path, httpMethod, headers, body: rawBody } = event
   const body = rawBody ? JSON.parse(rawBody) : {}
   const cookieHeader = headers.cookie || ''
+  if (!body.csrf_token && headers['x-csrf-token']) body.csrf_token = headers['x-csrf-token']
   const host = headers.host || ''
   const isSecure = process.env.HTTPS === '1' || host.includes('netlify.app')
 
-  const csrfToken = generateCsrf()
   const user = getAuthUser(cookieHeader)
+  const csrfToken = user ? deriveCsrf(user.id) : ''
 
   // Session timeout check
   if (user) {
@@ -316,18 +331,14 @@ export async function handler(event) {
   try {
     // ─── CSRF TOKEN ──────────────────────────────────────────────────────
     if (route === 'csrf-token' && httpMethod === 'GET') {
-      return json({ csrf_token: csrfToken }, 200, {
-        'Set-Cookie': setCookie('csrf', csrfToken, { secure: isSecure, maxAge: 86400 })
-      })
+      return json({ csrf_token: csrfToken })
     }
 
     // ─── ME ──────────────────────────────────────────────────────────────
     if (route === 'me' && httpMethod === 'GET') {
       if (!user) return json({ ok: false, user: null }, 401)
       const { data: dbUser } = await getSupabase().from('users').select('id, username, full_name, role').eq('id', user.id).single()
-      return json({ ok: true, user: dbUser, csrf_token: csrfToken }, 200, {
-        'Set-Cookie': setCookie('csrf', csrfToken, { secure: isSecure, maxAge: 86400 })
-      })
+      return json({ ok: true, user: dbUser, csrf_token: csrfToken })
     }
 
     // ─── LOGIN ───────────────────────────────────────────────────────────
@@ -346,12 +357,10 @@ export async function handler(event) {
       await audit(dbUser.id, 'LOGIN', 'user', String(dbUser.id), `Login: ${dbUser.username}`)
       return json({
         ok: true,
-        user: { id: dbUser.id, username: dbUser.username, full_name: dbUser.full_name, role: dbUser.role }
+        user: { id: dbUser.id, username: dbUser.username, full_name: dbUser.full_name, role: dbUser.role },
+        csrf_token: csrfToken
       }, 200, {
-        'Set-Cookie': [
-          setCookie('token', token, { secure: isSecure, maxAge: 28800 }),
-          setCookie('csrf', csrfToken, { secure: isSecure, maxAge: 86400 })
-        ].join(', ')
+        'Set-Cookie': setCookie('token', token, { secure: isSecure, maxAge: 28800 })
       })
     }
 
@@ -359,11 +368,45 @@ export async function handler(event) {
     if (route === 'logout' && httpMethod === 'POST') {
       if (user) await audit(user.id, 'LOGOUT', 'user', String(user.id), `Logout: ${user.username}`)
       return json({ ok: true }, 200, {
-        'Set-Cookie': [
-          'token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
-          'csrf=; Path=/; SameSite=Lax; Max-Age=0'
-        ].join(', ')
+        'Set-Cookie': 'token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'
       })
+    }
+
+    // ─── FORGOT PASSWORD ────────────────────────────────────────────────
+    if (route === 'forgot-password' && httpMethod === 'POST') {
+      const { username } = body
+      if (!username) return json({ ok: false, erro: 'Informe o nome de usuario.' }, 400)
+      const { data: dbUser } = await getSupabase().from('users').select('*').eq('username', username).single()
+      if (!dbUser) return json({ ok: true, msg: 'Se o usuario existir, um email sera enviado.' })
+      const token = crypto.randomBytes(32).toString('hex')
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      await getSupabase().from('password_resets').insert({
+        user_id: dbUser.id, token, expires_at: expiresAt
+      })
+      const cfg = await getEmailConfig()
+      const emailTo = dbUser.email || cfg.email_remetente
+      if (cfg.email_remetente && cfg.email_senha && emailTo) {
+        const resetUrl = `https://${headers.host || 'contratosidealalimentacao.netlify.app'}/?reset_token=${token}`
+        const html = `<h2>Redefinicao de Senha</h2><p>Ola ${escapeHtml(dbUser.full_name)},</p><p>Clique no link abaixo para redefinir sua senha:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>Este link expira em 1 hora.</p><p>Se voce nao solicitou esta redefinicao, ignore este email.</p>`
+        try { await enviarEmail(cfg, html, 'Redefinicao de Senha - Controle de Contratos', emailTo) } catch {}
+      }
+      return json({ ok: true, msg: 'Se o usuario existir, um email sera enviado.' })
+    }
+
+    // ─── RESET PASSWORD ─────────────────────────────────────────────────
+    if (route === 'reset-password' && httpMethod === 'POST') {
+      const { token, password } = body
+      if (!token || !password) return json({ ok: false, erro: 'Token e nova senha sao obrigatorios.' }, 400)
+      if (password.length < 6) return json({ ok: false, erro: 'A senha deve ter no minimo 6 caracteres.' }, 400)
+      const now = new Date().toISOString()
+      const { data: reset } = await getSupabase().from('password_resets')
+        .select('*').eq('token', token).eq('used', 0).single()
+      if (!reset) return json({ ok: false, erro: 'Token invalido ou ja utilizado.' }, 400)
+      if (reset.expires_at < now) return json({ ok: false, erro: 'Token expirado. Solicite uma nova redefinicao.' }, 400)
+      const hash = await hashPassword(password)
+      await getSupabase().from('users').update({ password_hash: hash }).eq('id', reset.user_id)
+      await getSupabase().from('password_resets').update({ used: 1 }).eq('id', reset.id)
+      return json({ ok: true, msg: 'Senha redefinida com sucesso!' })
     }
 
     // ─── CONFIG-EMAIL ────────────────────────────────────────────────────
@@ -376,7 +419,7 @@ export async function handler(event) {
       if (httpMethod === 'POST') {
         const authErr = requireAuth(user)
         if (authErr) return authErr
-        if (!validateCsrf(cookieHeader, body.csrf_token)) {
+        if (!validateCsrf(user, body.csrf_token)) {
           return json({ ok: false, erro: 'CSRF invalido' }, 403)
         }
         const { data: oldCfg } = await getSupabase().from('email_config').select('*').eq('id', 1).single()
@@ -394,7 +437,7 @@ export async function handler(event) {
       if (httpMethod !== 'POST') return json({ ok: false, erro: 'Metodo nao permitido' }, 405)
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      if (!validateCsrf(cookieHeader, body.csrf_token)) {
+      if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
       const cfg = await getEmailConfig()
@@ -440,7 +483,7 @@ export async function handler(event) {
       if (httpMethod !== 'POST') return json({ ok: false, erro: 'Metodo nao permitido' }, 405)
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      if (!validateCsrf(cookieHeader, body.csrf_token)) {
+      if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
       const cfg = await getEmailConfig()
@@ -481,7 +524,7 @@ export async function handler(event) {
     if (route === 'users' && httpMethod === 'GET') {
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      const { data: users } = await getSupabase().from('users').select('id, username, full_name, role, active, created_at').order('id')
+      const { data: users } = await getSupabase().from('users').select('id, username, full_name, email, role, active, created_at').order('id')
       return json(users)
     }
 
@@ -490,7 +533,7 @@ export async function handler(event) {
       if (authErr) return authErr
       const adminErr = requireAdmin(user)
       if (adminErr) return adminErr
-      if (!validateCsrf(cookieHeader, body.csrf_token)) {
+      if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
       const username = (body.username || '').trim()
@@ -503,8 +546,9 @@ export async function handler(event) {
       const { data: existing } = await getSupabase().from('users').select('id').eq('username', username).single()
       if (existing) return json({ ok: false, erro: 'Usuario ja existe' }, 400)
       const hash = await hashPassword(password)
+      const email = (body.email || '').trim()
       const { data: newUser } = await getSupabase().from('users').insert({
-        username, full_name: fullName, password_hash: hash, role
+        username, full_name: fullName, email, password_hash: hash, role
       }).select().single()
       await audit(user.id, 'CREATE', 'user', '', `Usuario ${username} criado por ${user.username}`)
       return json({ ok: true, user: { id: newUser.id } })
@@ -515,14 +559,18 @@ export async function handler(event) {
       if (authErr) return authErr
       const adminErr = requireAdmin(user)
       if (adminErr) return adminErr
-      if (!validateCsrf(cookieHeader, body.csrf_token)) {
+      if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
       const uid = parseInt(parts[1])
       const fullName = (body.full_name || '').trim()
       const role = (body.role || 'user').trim()
       const active = body.active !== false ? 1 : 0
-      await getSupabase().from('users').update({ full_name: fullName, role, active }).eq('id', uid)
+      const upd = { full_name: fullName, email: (body.email || '').trim(), role, active }
+      if (body.password && body.password.trim()) {
+        upd.password_hash = await hashPassword(body.password.trim())
+      }
+      await getSupabase().from('users').update(upd).eq('id', uid)
       await audit(user.id, 'UPDATE', 'user', String(uid), `Usuario ${uid} atualizado por ${user.username}`)
       return json({ ok: true })
     }
@@ -532,7 +580,7 @@ export async function handler(event) {
       if (authErr) return authErr
       const adminErr = requireAdmin(user)
       if (adminErr) return adminErr
-      if (!validateCsrf(cookieHeader, body.csrf_token)) {
+      if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
       const uid = parseInt(parts[1])
@@ -551,7 +599,7 @@ export async function handler(event) {
     if (route === 'companies' && httpMethod === 'POST') {
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      if (!validateCsrf(cookieHeader, body.csrf_token)) {
+      if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
       const cid = body.id || crypto.randomUUID()
@@ -559,12 +607,27 @@ export async function handler(event) {
       if (!nome) return json({ ok: false, erro: 'Nome da empresa e obrigatorio.' }, 400)
       const cnpj = (body.cnpj || '').trim()
       const { data: existing } = await getSupabase().from('companies').select('id').eq('id', cid).single()
+      const active = body.active !== undefined ? (body.active ? 1 : 0) : 1
       if (existing) {
-        await getSupabase().from('companies').update({ nome, cnpj }).eq('id', cid)
+        await getSupabase().from('companies').update({ nome, cnpj, active }).eq('id', cid)
       } else {
-        await getSupabase().from('companies').insert({ id: cid, nome, cnpj })
+        await getSupabase().from('companies').insert({ id: cid, nome, cnpj, active })
       }
       return json({ ok: true, id: cid })
+    }
+
+    if (parts[0] === 'companies' && parts[1] && httpMethod === 'PUT') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const upd = {}
+      if (body.active !== undefined) upd.active = body.active ? 1 : 0
+      if (body.nome !== undefined) upd.nome = (body.nome || '').trim()
+      if (body.cnpj !== undefined) upd.cnpj = (body.cnpj || '').trim()
+      await getSupabase().from('companies').update(upd).eq('id', parts[1])
+      return json({ ok: true })
     }
 
     if (parts[0] === 'companies' && parts[1] && httpMethod === 'DELETE') {
@@ -572,10 +635,23 @@ export async function handler(event) {
       if (authErr) return authErr
       const adminErr = requireAdmin(user)
       if (adminErr) return adminErr
-      if (!validateCsrf(cookieHeader, body.csrf_token)) {
+      if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
       await getSupabase().from('companies').delete().eq('id', parts[1])
+      return json({ ok: true })
+    }
+
+    // ─── CONTRACTS PUT ───────────────────────────────────────────────────
+    if (parts[0] === 'contracts' && parts[1] && httpMethod === 'PUT') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const upd = {}
+      if (body.active !== undefined) upd.active = body.active ? 1 : 0
+      await getSupabase().from('contracts').update(upd).eq('id', parts[1])
       return json({ ok: true })
     }
 
@@ -585,7 +661,7 @@ export async function handler(event) {
       if (authErr) return authErr
       const adminErr = requireAdmin(user)
       if (adminErr) return adminErr
-      if (!validateCsrf(cookieHeader, body.csrf_token)) {
+      if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
       await getSupabase().from('payments').delete().eq('contract_id', parts[1])
@@ -601,7 +677,7 @@ export async function handler(event) {
       if (authErr) return authErr
       const adminErr = requireAdmin(user)
       if (adminErr) return adminErr
-      if (!validateCsrf(cookieHeader, body.csrf_token)) {
+      if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
       await getSupabase().from('payments').delete().eq('id', parts[1])
@@ -617,7 +693,7 @@ export async function handler(event) {
         const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios] = await Promise.all([
           getSupabase().from('contracts').select('*').order('created_at', { ascending: false }),
           getSupabase().from('payments').select('*').order('vencimento'),
-          getSupabase().from('users').select('id, username, full_name, role, created_at').order('id'),
+          getSupabase().from('users').select('id, username, full_name, email, role, created_at').order('id'),
           getSupabase().from('additives').select('*').order('created_at'),
           getSupabase().from('companies').select('*').order('nome'),
           getSupabase().from('destinatarios').select('*').order('criado_em'),
@@ -635,7 +711,7 @@ export async function handler(event) {
       if (httpMethod === 'POST') {
         const authErr = requireAuth(user)
         if (authErr) return authErr
-        if (!validateCsrf(cookieHeader, body.csrf_token)) {
+        if (!validateCsrf(user, body.csrf_token)) {
           return json({ ok: false, erro: 'CSRF invalido' }, 403)
         }
         if (!body) return json({ ok: false, erro: 'JSON invalido ou vazio.' }, 400)
@@ -660,6 +736,7 @@ export async function handler(event) {
             valor_parcela: safeFloat(pgto.valorParcela), dia_vencimento: pgto.diaVenc,
             responsavel: (c.responsavel || '').trim(), setor: (c.setor || '').trim(),
             obs: (c.obs || '').trim(), tipo: c.tipo, empresa_id: c.empresaId,
+            active: c.active !== undefined ? (c.active ? 1 : 0) : 1,
             forma_pagamento: pgto.forma, arquivo_contrato: arquivoJson
           }
           if (existing) {

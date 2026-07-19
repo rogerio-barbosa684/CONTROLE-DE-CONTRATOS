@@ -468,7 +468,25 @@
       <input type="password" id="log-pass" />
     </div>
     <button class="btn btn-primary" style="width:100%; margin-top:20px;" onclick="doLogin()">Entrar no Sistema</button>
+    <div style="margin-top:14px;font-size:0.85rem;"><a href="#" onclick="mostrarForgotPassword();return false;" style="color:#1a3c5e;">Esqueci a senha</a></div>
     </div>
+</div>
+
+<div id="reset-pass-content" style="max-width:400px; margin:100px auto;display:none;">
+  <div class="card" style="text-align:center;">
+    <h2 style="border:none;padding:0;">Redefinir Senha</h2>
+    <div id="rp-msg" style="color:#2e7d52;font-weight:bold;font-size:0.9rem;margin-bottom:16px;display:none;"></div>
+    <div class="form-group" style="text-align:left;">
+      <label>Nova Senha</label>
+      <input type="password" id="rp-senha" placeholder="Mínimo 6 caracteres" />
+    </div>
+    <div class="form-group" style="text-align:left;margin-top:12px;">
+      <label>Confirmar Senha</label>
+      <input type="password" id="rp-confirmar" placeholder="Repita a senha" />
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:20px;" onclick="doResetPassword()">Redefinir Senha</button>
+    <div style="margin-top:14px;font-size:0.85rem;"><a href="#" onclick="mostrarLogin();return false;" style="color:#1a3c5e;">Voltar ao login</a></div>
+  </div>
 </div>
 
 <div id="app-content">
@@ -726,7 +744,7 @@
           <table>
             <thead>
               <tr>
-                <th>ID</th><th>Usuário</th><th>Nome</th><th>Perfil</th><th>Empresas</th><th>Ativo</th><th>Criado em</th><th>Ações</th>
+                <th>ID</th><th>Usuário</th><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Empresas</th><th>Ativo</th><th>Criado em</th><th>Ações</th>
               </tr>
             </thead>
             <tbody id="tb-usuarios"></tbody>
@@ -879,6 +897,10 @@
       <div class="form-group">
         <label>Nome Completo *</label>
         <input type="text" id="mu-nome" placeholder="Nome completo"/>
+      </div>
+      <div class="form-group">
+        <label>E-mail</label>
+        <input type="email" id="mu-email" placeholder="email@exemplo.com"/>
       </div>
       <div class="form-group">
         <label>Senha *</label>
@@ -1050,6 +1072,24 @@
   </div>
 </div>
 
+<!-- MODAL: ESQUECI A SENHA -->
+<div class="modal-overlay" id="modal-esqueci-senha">
+  <div class="modal" style="max-width:400px;">
+    <button class="modal-close" onclick="fecharModal('modal-esqueci-senha')">×</button>
+    <h3>Esqueci a Senha</h3>
+    <p style="font-size:0.85rem;color:#555;margin-bottom:12px;">Informe seu nome de usuário para receber um link de redefinição de senha.</p>
+    <div class="form-group">
+      <label>Usuário</label>
+      <input type="text" id="fp-username" placeholder="Seu nome de usuário" />
+    </div>
+    <div id="fp-msg" style="font-size:0.85rem;margin-bottom:8px;display:none;"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="doForgotPassword()">Enviar</button>
+      <button class="btn" style="background:#e8eef4;color:#333;" onclick="fecharModal('modal-esqueci-senha')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ===================== LOGIN =====================
 let dbReadyCallbacks = [];
@@ -1087,6 +1127,7 @@ function checkLogin() {
     fetch('/api/me').then(r => r.json()).then(data => {
       if (data.ok && data.user) {
         sessionStorage.setItem('user', JSON.stringify(data.user));
+        if (data.csrf_token) csrfToken = data.csrf_token;
         mostrarApp(data.user);
       } else {
         sessionStorage.removeItem('logged_in');
@@ -1123,6 +1164,73 @@ function mostrarApp(user) {
 function mostrarLogin() {
   document.getElementById('login-content').style.display = 'block';
   document.getElementById('app-content').style.display = 'none';
+  document.getElementById('reset-pass-content').style.display = 'none';
+}
+
+function mostrarForgotPassword() {
+  document.getElementById('login-content').style.display = 'none';
+  document.getElementById('app-content').style.display = 'none';
+  document.getElementById('reset-pass-content').style.display = 'none';
+  document.getElementById('fp-username').value = '';
+  document.getElementById('fp-msg').style.display = 'none';
+  abrirModal('modal-esqueci-senha');
+}
+
+function doForgotPassword() {
+  const username = document.getElementById('fp-username').value.trim();
+  if (!username) { alert('Informe seu nome de usuario.'); return; }
+  const btn = document.querySelector('#modal-esqueci-senha .btn-primary');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  fetch('/api/forgot-password', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username})
+  }).then(r=>r.json()).then(d=>{
+    const msg = document.getElementById('fp-msg');
+    msg.style.display = 'block';
+    if (d.ok) {
+      msg.style.color = '#2e7d52';
+      msg.textContent = d.msg || 'Se o usuario existir, um email sera enviado.';
+    } else {
+      msg.style.color = '#c0392b';
+      msg.textContent = d.erro || 'Erro ao solicitar redefinicao.';
+    }
+  }).catch(()=>{
+    const msg = document.getElementById('fp-msg');
+    msg.style.display = 'block'; msg.style.color = '#c0392b';
+    msg.textContent = 'Servidor offline.';
+  }).finally(()=>{ btn.disabled = false; btn.textContent = 'Enviar'; });
+}
+
+function doResetPassword() {
+  const senha = document.getElementById('rp-senha').value;
+  const confirmar = document.getElementById('rp-confirmar').value;
+  if (!senha || senha.length < 6) { alert('A senha deve ter no minimo 6 caracteres.'); return; }
+  if (senha !== confirmar) { alert('As senhas nao conferem.'); return; }
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('reset_token');
+  if (!token) { alert('Token de redefinicao nao encontrado na URL.'); return; }
+  fetch('/api/reset-password', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token, password:senha})
+  }).then(r=>r.json()).then(d=>{
+    const msg = document.getElementById('rp-msg');
+    msg.style.display = 'block';
+    if (d.ok) {
+      msg.style.color = '#2e7d52';
+      msg.textContent = d.msg || 'Senha redefinida com sucesso!';
+      setTimeout(()=>{
+        window.location.search = '';
+        window.location.hash = '';
+        history.replaceState(null, '', window.location.pathname);
+        mostrarLogin();
+      }, 3000);
+    } else {
+      msg.style.color = '#c0392b';
+      msg.textContent = d.erro || 'Erro ao redefinir senha.';
+    }
+  }).catch(()=>{
+    const msg = document.getElementById('rp-msg');
+    msg.style.display = 'block'; msg.style.color = '#c0392b';
+    msg.textContent = 'Servidor offline.';
+  });
 }
 
 // ===================== INDEXED DB =====================
@@ -1226,7 +1334,7 @@ function loadDataFromDB() {
       if (cachedTipos.length === 0) {
         try {
           const defaults = ['Serviço', 'Fornecimento', 'Locação', 'Obra', 'Consultoria', 'Outro'];
-          const seed = defaults.map(nome => ({ id: uid(), nome, criadoEm: new Date().toISOString() }));
+          const seed = defaults.map(nome => ({ id: uid(), nome, active: 1, criadoEm: new Date().toISOString() }));
           const tw = db.transaction("tipos", "readwrite");
           seed.forEach(s => tw.objectStore("tipos").put(s));
           cachedTipos = seed;
@@ -1259,7 +1367,7 @@ function saveEmpresas(arr) {
   arr.forEach(a => {
     fetch('/api/companies', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
-      body:JSON.stringify({ id: a.id, nome: a.nome, cnpj: a.cnpj || '' })
+      body:JSON.stringify({ id: a.id, nome: a.nome, cnpj: a.cnpj || '', active: a.active !== undefined ? a.active : 1 })
     }).catch(() => {});
   });
 }
@@ -1301,7 +1409,7 @@ function popularTipoSelect() {
   if (!sel) return;
   const atual = sel.value;
   sel.innerHTML = '<option value="">Selecione...</option>';
-  getTipos().forEach(t => {
+  getTipos().filter(t => t.active !== 0).forEach(t => {
     const opt = document.createElement('option');
     opt.value = t.nome; opt.textContent = t.nome;
     sel.appendChild(opt);
@@ -1317,11 +1425,18 @@ function renderTiposConfig() {
     tb.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#aaa;padding:32px">Nenhum tipo cadastrado.</td></tr>';
     return;
   }
-  tb.innerHTML = tipos.map((t, i) => `<tr>
+  const _user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const isAdmin = _user.role === 'admin';
+  tb.innerHTML = tipos.map((t, i) => {
+    const ativo = t.active !== 0;
+    return `<tr${ativo ? '' : ' style="opacity:0.55"'}>
     <td>${i + 1}</td>
-    <td>${t.nome}</td>
-    <td><button class="btn btn-sm btn-danger" onclick="excluirTipo('${t.id}')">Excluir</button></td>
-  </tr>`).join('');
+    <td>${escapeHtml(t.nome)} ${ativo ? '' : '<span class="badge badge-vencido">Inativo</span>'}</td>
+    <td style="display:flex;gap:4px;">
+      <button class="btn btn-sm ${ativo ? 'btn-warning' : 'btn-secondary'}" onclick="inativarTipo('${t.id}')">${ativo ? 'Inativar' : 'Ativar'}</button>
+      ${isAdmin ? `<button class="btn btn-sm btn-danger" onclick="excluirTipo('${t.id}')">Excluir</button>` : ''}
+    </td>
+  </tr>`}).join('');
 }
 
 function adicionarTipo() {
@@ -1332,7 +1447,7 @@ function adicionarTipo() {
   if (tipos.find(t => t.nome.toLowerCase() === nome.toLowerCase())) {
     alert('Este tipo já existe.'); return;
   }
-  tipos.push({ id: uid(), nome, criadoEm: new Date().toISOString() });
+  tipos.push({ id: uid(), nome, active: 1, criadoEm: new Date().toISOString() });
   saveTipos(tipos);
   input.value = '';
   renderTiposConfig();
@@ -1347,6 +1462,17 @@ function excluirTipo(id) {
   popularTipoSelect();
 }
 
+function inativarTipo(id) {
+  const tipos = getTipos();
+  const t = tipos.find(x => x.id === id);
+  if (!t) return;
+  t.active = t.active === 0 ? 1 : 0;
+  saveTipos(tipos);
+  renderTiposConfig();
+  popularTipoSelect();
+  mostrarToast(`Tipo ${t.active ? 'ativado' : 'inativado'} com sucesso.`, 'sucesso');
+}
+
 // ===================== EMPRESAS =====================
 function popularEmpresaSelect() {
   const sel = document.getElementById('f-empresa');
@@ -1354,7 +1480,7 @@ function popularEmpresaSelect() {
   const atual = sel.value;
   const empIds = getLoggedUserEmpresaIds();
   sel.innerHTML = '<option value="">Selecione...</option>';
-  getEmpresas().forEach(e => {
+  getEmpresas().filter(e => e.active !== 0).forEach(e => {
     if (empIds && !empIds.includes(e.id)) return;
     const opt = document.createElement('option');
     opt.value = e.id; opt.textContent = e.nome + (e.cnpj ? ' (' + e.cnpj + ')' : '');
@@ -1377,7 +1503,7 @@ function popularEmpresaCheckboxes() {
     return;
   }
   const selected = JSON.parse(container.dataset.selected || '[]');
-  container.innerHTML = empresas.map(e => `
+  container.innerHTML = empresas.filter(e => e.active !== 0).map(e => `
     <label>
       <input type="checkbox" value="${e.id}" ${selected.includes(e.id) ? 'checked' : ''}/>
       ${escapeHtml(e.nome)}
@@ -1395,15 +1521,20 @@ function renderEmpresasConfig() {
     tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#aaa;padding:32px">Nenhuma empresa cadastrada.</td></tr>';
     return;
   }
-  tb.innerHTML = empresas.map((e, i) => `<tr>
+  const _user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const isAdmin = _user.role === 'admin';
+  tb.innerHTML = empresas.map((e, i) => {
+    const ativo = e.active !== 0;
+    return `<tr${ativo ? '' : ' style="opacity:0.55"'}>
     <td>${i + 1}</td>
-    <td>${escapeHtml(e.nome)}</td>
+    <td>${escapeHtml(e.nome)} ${ativo ? '' : '<span class="badge badge-vencido">Inativo</span>'}</td>
     <td>${e.cnpj || '—'}</td>
-    <td>
+    <td style="display:flex;gap:4px;">
       <button class="btn btn-sm btn-primary" onclick="editarEmpresa('${e.id}')" style="padding:2px 8px;font-size:0.75rem;">Editar</button>
-      <button class="btn btn-sm btn-danger" onclick="excluirEmpresa('${e.id}')" style="padding:2px 8px;font-size:0.75rem;">Excluir</button>
+      <button class="btn btn-sm ${ativo ? 'btn-warning' : 'btn-secondary'}" onclick="inativarEmpresa('${e.id}')" style="padding:2px 8px;font-size:0.75rem;">${ativo ? 'Inativar' : 'Ativar'}</button>
+      ${isAdmin ? `<button class="btn btn-sm btn-danger" onclick="excluirEmpresa('${e.id}')" style="padding:2px 8px;font-size:0.75rem;">Excluir</button>` : ''}
     </td>
-  </tr>`).join('');
+  </tr>`}).join('');
 }
 
 function limparFormEmpresa() {
@@ -1437,7 +1568,7 @@ function salvarEmpresa() {
       empresas[idx].cnpj = cnpj;
     }
   } else {
-    empresas.push({ id: uid(), nome, cnpj, criadoEm: new Date().toISOString() });
+    empresas.push({ id: uid(), nome, cnpj, active: 1, criadoEm: new Date().toISOString() });
   }
   saveEmpresas(empresas);
   limparFormEmpresa();
@@ -1461,6 +1592,20 @@ function excluirEmpresa(id) {
   mostrarToast('Empresa excluida.', 'sucesso');
 }
 
+function inativarEmpresa(id) {
+  const empresas = getEmpresas();
+  const e = empresas.find(x => x.id === id);
+  if (!e) return;
+  e.active = e.active === 0 ? 1 : 0;
+  saveEmpresas(empresas);
+  fetch('/api/companies/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: e.active }) }).catch(() => {});
+  renderEmpresasConfig();
+  popularEmpresaSelect();
+  popularEmpresaCheckboxes();
+  popularDestEmpresaCheckboxes();
+  mostrarToast(`Empresa ${e.active ? 'ativada' : 'inativada'} com sucesso.`, 'sucesso');
+}
+
 // ===================== DESTINATARIOS =====================
 function popularDestEmpresaCheckboxes() {
   const container = document.getElementById('dest-empresas-checkboxes');
@@ -1471,7 +1616,7 @@ function popularDestEmpresaCheckboxes() {
     return;
   }
   const selected = JSON.parse(container.dataset.selected || '[]');
-  container.innerHTML = empresas.map(e => `
+  container.innerHTML = empresas.filter(e => e.active !== 0).map(e => `
     <label style="font-size:0.82rem;">
       <input type="checkbox" value="${e.id}" ${selected.includes(e.id) ? 'checked' : ''}/>
       ${escapeHtml(e.nome)}
@@ -1601,7 +1746,8 @@ function mapServerContract(c) {
     responsavel: c.responsavel || '', setor: c.setor || '',
     obs: c.obs || '', tipo: c.tipo || '',
     empresaId: c.empresa_id || null, arquivo: arquivo,
-    aditivos: [], criadoEm: c.created_at
+    aditivos: [], criadoEm: c.created_at,
+    active: c.active !== undefined ? c.active : 1
   };
 }
 function mapServerPayment(p) {
@@ -1655,7 +1801,8 @@ function loadFromServer() {
         id: e.id,
         nome: e.nome,
         cnpj: e.cnpj || '',
-        criadoEm: e.criado_em
+        criadoEm: e.criado_em,
+        active: e.active !== undefined ? e.active : 1
       }));
       cachedEmpresas = serverEmpresas; saveEmpresas(serverEmpresas);
     }
@@ -1969,6 +2116,7 @@ async function salvarContrato() {
       obs: document.getElementById('f-obs').value,
       temParcelas, pgtoConfig, arquivo: arquivoB64,
       aditivos: [],
+      active: 1,
       criadoEm: new Date().toISOString()
     };
     contratos.push(contrato);
@@ -2039,11 +2187,14 @@ function renderContratos() {
     return;
   }
 
+  const _user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const isAdmin = _user.role === 'admin';
   tb.innerHTML = lista.map(c => {
     const fim = new Date(c.fim + 'T12:00:00');
-    const ativo = fim >= hoje;
-    const status = ativo ? 'ativo' : 'vencido';
-    const labelStatus = ativo ? 'Ativo' : 'Vencido';
+    const dataAtivo = fim >= hoje;
+    const userInativo = c.active === 0;
+    const status = userInativo ? 'vencido' : (dataAtivo ? 'ativo' : 'vencido');
+    const labelStatus = userInativo ? 'Inativo' : (dataAtivo ? 'Ativo' : 'Vencido');
     const aditivosBadge = c.aditivos?.length
       ? `<span class="badge badge-aditivo">${c.aditivos.length} adit.</span>` : '';
     const empresaNome = empresas.find(e => e.id === c.empresaId)?.nome || '—';
@@ -2052,7 +2203,7 @@ function renderContratos() {
       ? `<button class="btn btn-sm btn-light" style="padding:4px 8px;font-size:0.75rem;" onclick="baixarAnexo('${c.id}')">Ver Anexo</button>` 
       : '—';
 
-    return `<tr>
+    return `<tr${userInativo ? ' style="opacity:0.55"' : ''}>
       <td><strong>${escapeHtml(c.numero)}</strong></td>
       <td style="font-size:0.8rem;">${empresaNome}</td>
       <td>${escapeHtml(c.objeto)}</td>
@@ -2065,7 +2216,8 @@ function renderContratos() {
         <button class="btn btn-sm btn-primary" onclick="abrirDetalhe('${c.id}')">Ver</button>
         <button class="btn btn-sm btn-warning" onclick="editarContrato('${c.id}')">Editar</button>
         <button class="btn btn-sm btn-warning" onclick="abrirAditivo('${c.id}')">Adit</button>
-        <button class="btn btn-sm btn-danger" onclick="excluirContrato('${c.id}')">Exc</button>
+        <button class="btn btn-sm ${userInativo ? 'btn-secondary' : 'btn-warning'}" onclick="inativarContrato('${c.id}')">${userInativo ? 'Ativar' : 'Inat'}</button>
+        ${isAdmin ? `<button class="btn btn-sm btn-danger" onclick="excluirContrato('${c.id}')">Exc</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -2199,6 +2351,19 @@ function excluirContrato(id) {
   syncToServer();
   renderContratos();
   renderDashboard();
+}
+
+function inativarContrato(id) {
+  const contratos = getContratos();
+  const c = contratos.find(x => x.id === id);
+  if (!c) return;
+  c.active = c.active === 0 ? 1 : 0;
+  saveContratos(contratos);
+  fetch('/api/contracts/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: c.active }) }).catch(() => {});
+  syncToServer();
+  renderContratos();
+  renderDashboard();
+  mostrarToast(`Contrato ${c.active ? 'ativado' : 'inativado'} com sucesso.`, 'sucesso');
 }
 
 // ===================== ADITIVO =====================
@@ -2519,7 +2684,7 @@ function estornarBaixa(id) {
 // ===================== DASHBOARD =====================
 function renderDashboard() {
   const empIds = getLoggedUserEmpresaIds();
-  let contratos  = getContratos();
+  let contratos  = getContratos().filter(c => c.active !== 0);
   if (empIds) contratos = contratos.filter(c => c.empresaId && empIds.includes(c.empresaId));
   const contratoIds = new Set(contratos.map(c => c.id));
   let pagamentos = getPagamentos();
@@ -2663,6 +2828,7 @@ function abrirModalUsuario(dados) {
   document.getElementById('mu-username').value = dados ? dados.username : '';
   document.getElementById('mu-username').disabled = !!dados;
   document.getElementById('mu-nome').value = dados ? dados.full_name : '';
+  document.getElementById('mu-email').value = dados ? (dados.email || '') : '';
   document.getElementById('mu-senha').value = '';
   document.getElementById('mu-senha').required = !dados;
   document.getElementById('mu-perfil').value = dados ? dados.role : 'user';
@@ -2680,6 +2846,7 @@ function abrirModalUsuario(dados) {
 function salvarUsuario() {
   const username = document.getElementById('mu-username').value.trim();
   const full_name = document.getElementById('mu-nome').value.trim();
+  const email = document.getElementById('mu-email').value.trim();
   const password = document.getElementById('mu-senha').value;
   const role = document.getElementById('mu-perfil').value;
   if (!username || !full_name) { alert('Preencha usuário e nome completo.'); return; }
@@ -2709,14 +2876,16 @@ function salvarUsuario() {
     renderUsuarios();
   }
 
+  getCsrfToken().then(() => {
   const req = _editandoUsuario
-    ? fetch('/api/users/' + _editandoUsuario, { method:'PUT', headers:csrfHeaders(), body:JSON.stringify({full_name, role}) })
-    : fetch('/api/users', { method:'POST', headers:csrfHeaders(), body:JSON.stringify({username, full_name, password, role}) });
+    ? fetch('/api/users/' + _editandoUsuario, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({full_name, email, role, ...(password ? {password} : {})}) })
+    : fetch('/api/users', { method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({username, full_name, email, password, role}) });
   req.then(r=>r.json()).then(d=>{
     if (d.ok) { onUserSaved(_editandoUsuario || d.user?.id); }
-    else if (d.erro === 'Nao autenticado') { sessionStorage.removeItem('logged_in'); sessionStorage.removeItem('user'); mostrarLogin(); }
+    else if (d.erro === 'Nao autenticado' || d.erro?.includes('Sessao')) { sessionStorage.removeItem('logged_in'); sessionStorage.removeItem('user'); mostrarLogin(); }
     else alert(d.erro || 'Erro ao salvar usuario');
   }).catch(()=>{ mostrarToast('Servidor offline. Use o modo servidor para gerenciar usuários.', 'erro'); });
+  });
 }
 
 function excluirUsuario(id) {
@@ -2738,9 +2907,9 @@ function renderUsuarios() {
     .then(users => {
       if (users && users.ok === false) {
         if (users.erro === 'Nao autenticado') { sessionStorage.removeItem('logged_in'); sessionStorage.removeItem('user'); mostrarLogin(); return; }
-        tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#aaa;padding:32px">' + (users.erro || 'Servidor offline') + '</td></tr>'; return;
+        tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">' + (users.erro || 'Servidor offline') + '</td></tr>'; return;
       }
-      if (!Array.isArray(users)) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#aaa;padding:32px">Servidor offline</td></tr>'; return; }
+      if (!Array.isArray(users)) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">Servidor offline</td></tr>'; return; }
       tb.innerHTML = users.map(u => {
         const ue = getUserEmpresas(u.id);
         const empNomes = u.role === 'admin' ? '<span style="color:#2e7d52;font-weight:500;">Todas</span>' : (ue ? ue.empresaIds.map(eid => {
@@ -2748,7 +2917,7 @@ function renderUsuarios() {
           return e ? e.nome : null;
         }).filter(Boolean).join(', ') : '—');
         return `<tr>
-        <td>${escapeHtml(String(u.id))}</td><td>${escapeHtml(u.username)}</td><td>${escapeHtml(u.full_name)}</td>
+        <td>${escapeHtml(String(u.id))}</td><td>${escapeHtml(u.username)}</td><td>${escapeHtml(u.full_name)}</td><td>${escapeHtml(u.email || '')}</td>
         <td>${u.role === 'admin' ? 'Admin' : 'Usuário'}</td>
         <td style="font-size:0.8rem;max-width:200px;white-space:normal;">${empNomes}</td>
         <td>${u.active ? '<span class="badge badge-ativo">Sim</span>' : '<span class="badge badge-vencido">Não</span>'}</td>
@@ -2905,10 +3074,16 @@ function toggleTema() {
   }
 })();
 
-// Check initial login state
-checkLogin();
-// Fetch CSRF token in background if logged in
-if (sessionStorage.getItem('logged_in') === 'true') getCsrfToken();
+// Check for reset token in URL
+const resetToken = new URLSearchParams(window.location.search).get('reset_token');
+if (resetToken) {
+  document.getElementById('login-content').style.display = 'none';
+  document.getElementById('app-content').style.display = 'none';
+  document.getElementById('reset-pass-content').style.display = 'block';
+} else {
+  checkLogin();
+  if (sessionStorage.getItem('logged_in') === 'true') getCsrfToken();
+}
 </script>
 </body>
 </html>

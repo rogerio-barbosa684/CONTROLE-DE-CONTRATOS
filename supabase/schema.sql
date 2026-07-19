@@ -6,9 +6,20 @@ CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
   full_name TEXT NOT NULL,
+  email TEXT DEFAULT '',
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'user',
   active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (now()::text)
+);
+
+-- Password reset tokens
+CREATE TABLE IF NOT EXISTS password_resets (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token TEXT NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0,
+  expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (now()::text)
 );
 
@@ -17,6 +28,7 @@ CREATE TABLE IF NOT EXISTS companies (
   id TEXT PRIMARY KEY,
   nome TEXT NOT NULL,
   cnpj TEXT DEFAULT '',
+  active INTEGER NOT NULL DEFAULT 1,
   criado_em TEXT NOT NULL DEFAULT (now()::text)
 );
 
@@ -39,6 +51,7 @@ CREATE TABLE IF NOT EXISTS contracts (
   obs TEXT,
   tipo TEXT,
   empresa_id TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
   forma_pagamento TEXT,
   arquivo_contrato TEXT,
   created_by INTEGER,
