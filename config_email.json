@@ -1,0 +1,8 @@
+{
+  "smtp_server": "smtp.gmail.com",
+  "smtp_port": 587,
+  "email_remetente": "rogerio.barbosa@idealalimentacao.com.br",
+  "email_senha": "********",
+  "email_destinatario": "rogerio.barbosa@idealalimentacao.com.br",
+  "email_senha_enc": "gAAAAABqW-bmqBlNx7qIlwQcxYkHziX90Y-495l1JUHWGmel3FA_-VVZMFVlOEpHxuLxm8Ef5nG6IFxZNHzcBZ87KCNHoaDAQqkz_4cf8ZoNolSR2g_FY3I="
+}

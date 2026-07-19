@@ -1,0 +1,14 @@
+{
+  "contratos": [],
+  "pagamentos": [],
+  "usuarios": [
+    {
+      "id": "mqu06miow3v2j5fnckm",
+      "login": "admin",
+      "nome": "Administrador",
+      "senha": "*** REMOVIDO POR SEGURANCA - USE O BANCO SQLITE ***",
+      "perfil": "admin",
+      "criadoEm": "2026-06-25"
+    }
+  ]
+}
