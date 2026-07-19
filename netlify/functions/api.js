@@ -584,9 +584,10 @@ export async function handler(event) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
       const uid = parseInt(parts[1])
-      if (uid === 1) return json({ ok: false, erro: 'Nao e possivel inativar o usuario admin principal.' }, 400)
-      await getSupabase().from('users').update({ active: 0 }).eq('id', uid)
-      await audit(user.id, 'INACTIVATE', 'user', String(uid), `Usuario ${uid} inativado por ${user.username}`)
+      if (uid === 1) return json({ ok: false, erro: 'Nao e possivel excluir o usuario admin principal.' }, 400)
+      await getSupabase().from('password_resets').delete().eq('user_id', uid)
+      await getSupabase().from('users').delete().eq('id', uid)
+      await audit(user.id, 'DELETE', 'user', String(uid), `Usuario ${uid} excluido por ${user.username}`)
       return json({ ok: true })
     }
 

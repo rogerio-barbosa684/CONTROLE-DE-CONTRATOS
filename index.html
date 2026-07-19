@@ -2888,8 +2888,17 @@ function salvarUsuario() {
   });
 }
 
+function toggleAtivoUsuario(id, ativo) {
+  if (!confirm(`Tem certeza que deseja ${ativo ? 'ativar' : 'inativar'} este usuário?`)) return;
+  fetch('/api/users/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({active: ativo}) })
+    .then(r => r.json()).then(d => {
+      if(d.ok) renderUsuarios();
+      else alert(d.erro || 'Erro');
+    }).catch(() => alert('Servidor offline'));
+}
+
 function excluirUsuario(id) {
-  if (!confirm('Inativar este usuário? Ele não poderá mais fazer login.')) return;
+  if (!confirm('Excluir permanentemente este usuário? Todos os dados dele serão removidos.')) return;
   fetch('/api/users/' + id, { method:'DELETE', headers:csrfHeaders() })
     .then(r => { try { return r.json(); } catch(e) { throw new Error('Resposta invalida do servidor (status ' + r.status + ')'); } })
     .then(d => {
@@ -2910,6 +2919,8 @@ function renderUsuarios() {
         tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">' + (users.erro || 'Servidor offline') + '</td></tr>'; return;
       }
       if (!Array.isArray(users)) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">Servidor offline</td></tr>'; return; }
+      const _u = JSON.parse(sessionStorage.getItem('user') || '{}');
+      const isAdminUsr = _u.role === 'admin';
       tb.innerHTML = users.map(u => {
         const ue = getUserEmpresas(u.id);
         const empNomes = u.role === 'admin' ? '<span style="color:#2e7d52;font-weight:500;">Todas</span>' : (ue ? ue.empresaIds.map(eid => {
@@ -2922,9 +2933,10 @@ function renderUsuarios() {
         <td style="font-size:0.8rem;max-width:200px;white-space:normal;">${empNomes}</td>
         <td>${u.active ? '<span class="badge badge-ativo">Sim</span>' : '<span class="badge badge-vencido">Não</span>'}</td>
         <td>${u.created_at || '-'}</td>
-        <td style="display:flex;gap:4px;">
+        <td style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
           <button class="btn btn-sm btn-primary" onclick='abrirModalUsuario(${JSON.stringify(u).replace(/'/g,"&#39;")})'>Editar</button>
-          ${u.id === 1 ? '<span style="color:#aaa;font-size:0.78rem;">—</span>' : `<button class="btn btn-sm btn-danger" onclick="excluirUsuario(${escapeHtml(String(u.id))})">Inat</button>`}
+          ${u.id === 1 ? '' : `<button class="btn btn-sm ${u.active ? 'btn-warning' : 'btn-secondary'}" onclick="toggleAtivoUsuario(${escapeHtml(String(u.id))}, ${u.active ? 0 : 1})">${u.active ? 'Inat' : 'Ativar'}</button>`}
+          ${isAdminUsr && u.id !== 1 ? `<button class="btn btn-sm btn-danger" onclick="excluirUsuario(${escapeHtml(String(u.id))})">Exc</button>` : ''}
         </td>
       </tr>`;
       }).join('');
