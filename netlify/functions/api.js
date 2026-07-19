@@ -3,19 +3,25 @@ import jwt from 'jsonwebtoken'
 import nodemailer from 'nodemailer'
 import crypto from 'crypto'
 
-const SUPABASE_URL = process.env.SUPABASE_URL
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex')
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+let _supabase = null
+function getSupabase() {
+  if (_supabase) return _supabase
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  _supabase = createClient(url, key)
+  return _supabase
+}
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json' }
-  })
+function json(data, status = 200, extraHeaders = {}) {
+  return {
+    statusCode: status,
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
+    body: JSON.stringify(data)
+  }
 }
 
 function parseCookies(header) {
@@ -93,7 +99,7 @@ function requireAuth(user) {
 }
 
 async function audit(userId, action, entity, entityId = '', details = '') {
-  await supabase.from('audit_log').insert({
+  await getSupabase().from('audit_log').insert({
     user_id: userId, action, entity,
     entity_id: entityId, details
   })
@@ -130,7 +136,7 @@ function safeFloat(value, def = 0) {
 // ─── EMAIL ─────────────────────────────────────────────────────────────────
 
 async function getEmailConfig() {
-  const { data } = await supabase.from('email_config').select('*').eq('id', 1).single()
+  const { data } = await getSupabase().from('email_config').select('*').eq('id', 1).single()
   if (!data) return {}
   const cfg = { ...data }
   if (cfg.email_senha_enc) {
@@ -160,7 +166,7 @@ async function saveEmailConfig(cfg) {
     data.email_senha_enc = Buffer.concat([iv, encrypted]).toString('hex')
   }
   delete data.email_senha
-  await supabase.from('email_config').upsert({ id: 1, ...data })
+  await getSupabase().from('email_config').upsert({ id: 1, ...data })
 }
 
 // ─── EMAIL SENDING ─────────────────────────────────────────────────────────
@@ -318,7 +324,7 @@ export async function handler(event) {
     // ─── ME ──────────────────────────────────────────────────────────────
     if (route === 'me' && httpMethod === 'GET') {
       if (!user) return json({ ok: false, user: null }, 401)
-      const { data: dbUser } = await supabase.from('users').select('id, username, full_name, role').eq('id', user.id).single()
+      const { data: dbUser } = await getSupabase().from('users').select('id, username, full_name, role').eq('id', user.id).single()
       return json({ ok: true, user: dbUser, csrf_token: csrfToken }, 200, {
         'Set-Cookie': setCookie('csrf', csrfToken, { secure: isSecure, maxAge: 86400 })
       })
@@ -327,7 +333,7 @@ export async function handler(event) {
     // ─── LOGIN ───────────────────────────────────────────────────────────
     if (route === 'login' && httpMethod === 'POST') {
       const { username, password } = body
-      const { data: dbUser } = await supabase.from('users').select('*').eq('username', username).eq('active', 1).single()
+      const { data: dbUser } = await getSupabase().from('users').select('*').eq('username', username).eq('active', 1).single()
       if (!dbUser || !(await checkPassword(password, dbUser.password_hash))) {
         return json({ ok: false, erro: 'Usuario ou senha incorretos!' }, 401)
       }
@@ -373,7 +379,7 @@ export async function handler(event) {
         if (!validateCsrf(cookieHeader, body.csrf_token)) {
           return json({ ok: false, erro: 'CSRF invalido' }, 403)
         }
-        const { data: oldCfg } = await supabase.from('email_config').select('*').eq('id', 1).single()
+        const { data: oldCfg } = await getSupabase().from('email_config').select('*').eq('id', 1).single()
         if (body.email_senha === '********' || !body.email_senha?.trim()) {
           body.email_senha = oldCfg?.email_senha_enc ? '********' : ''
           body.email_senha_enc = oldCfg?.email_senha_enc || ''
@@ -402,8 +408,8 @@ export async function handler(event) {
       if (!destinatariosData.length) {
         return json({ ok: true, msg: 'Nenhum destinatario cadastrado para enviar lembretes.' })
       }
-      const { data: contratos } = await supabase.from('contracts').select('*')
-      const { data: pagamentos } = await supabase.from('payments').select('*')
+      const { data: contratos } = await getSupabase().from('contracts').select('*')
+      const { data: pagamentos } = await getSupabase().from('payments').select('*')
       const hj = today()
 
       let enviados = 0, erros = []
@@ -445,7 +451,7 @@ export async function handler(event) {
       if (!destinatariosData.length) {
         return json({ ok: true, msg: 'Nenhum destinatario cadastrado para enviar alertas.' })
       }
-      const { data: contratos } = await supabase.from('contracts').select('*')
+      const { data: contratos } = await getSupabase().from('contracts').select('*')
       const hj = today()
 
       let enviados = 0, erros = []
@@ -475,7 +481,7 @@ export async function handler(event) {
     if (route === 'users' && httpMethod === 'GET') {
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      const { data: users } = await supabase.from('users').select('id, username, full_name, role, active, created_at').order('id')
+      const { data: users } = await getSupabase().from('users').select('id, username, full_name, role, active, created_at').order('id')
       return json(users)
     }
 
@@ -494,10 +500,10 @@ export async function handler(event) {
       if (!username || !fullName || !password) {
         return json({ ok: false, erro: 'Preencha todos os campos' }, 400)
       }
-      const { data: existing } = await supabase.from('users').select('id').eq('username', username).single()
+      const { data: existing } = await getSupabase().from('users').select('id').eq('username', username).single()
       if (existing) return json({ ok: false, erro: 'Usuario ja existe' }, 400)
       const hash = await hashPassword(password)
-      const { data: newUser } = await supabase.from('users').insert({
+      const { data: newUser } = await getSupabase().from('users').insert({
         username, full_name: fullName, password_hash: hash, role
       }).select().single()
       await audit(user.id, 'CREATE', 'user', '', `Usuario ${username} criado por ${user.username}`)
@@ -516,7 +522,7 @@ export async function handler(event) {
       const fullName = (body.full_name || '').trim()
       const role = (body.role || 'user').trim()
       const active = body.active !== false ? 1 : 0
-      await supabase.from('users').update({ full_name: fullName, role, active }).eq('id', uid)
+      await getSupabase().from('users').update({ full_name: fullName, role, active }).eq('id', uid)
       await audit(user.id, 'UPDATE', 'user', String(uid), `Usuario ${uid} atualizado por ${user.username}`)
       return json({ ok: true })
     }
@@ -531,14 +537,14 @@ export async function handler(event) {
       }
       const uid = parseInt(parts[1])
       if (uid === 1) return json({ ok: false, erro: 'Nao e possivel inativar o usuario admin principal.' }, 400)
-      await supabase.from('users').update({ active: 0 }).eq('id', uid)
+      await getSupabase().from('users').update({ active: 0 }).eq('id', uid)
       await audit(user.id, 'INACTIVATE', 'user', String(uid), `Usuario ${uid} inativado por ${user.username}`)
       return json({ ok: true })
     }
 
     // ─── COMPANIES ───────────────────────────────────────────────────────
     if (route === 'companies' && httpMethod === 'GET') {
-      const { data } = await supabase.from('companies').select('*').order('nome')
+      const { data } = await getSupabase().from('companies').select('*').order('nome')
       return json(data)
     }
 
@@ -552,11 +558,11 @@ export async function handler(event) {
       const nome = (body.nome || '').trim()
       if (!nome) return json({ ok: false, erro: 'Nome da empresa e obrigatorio.' }, 400)
       const cnpj = (body.cnpj || '').trim()
-      const { data: existing } = await supabase.from('companies').select('id').eq('id', cid).single()
+      const { data: existing } = await getSupabase().from('companies').select('id').eq('id', cid).single()
       if (existing) {
-        await supabase.from('companies').update({ nome, cnpj }).eq('id', cid)
+        await getSupabase().from('companies').update({ nome, cnpj }).eq('id', cid)
       } else {
-        await supabase.from('companies').insert({ id: cid, nome, cnpj })
+        await getSupabase().from('companies').insert({ id: cid, nome, cnpj })
       }
       return json({ ok: true, id: cid })
     }
@@ -569,7 +575,7 @@ export async function handler(event) {
       if (!validateCsrf(cookieHeader, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
-      await supabase.from('companies').delete().eq('id', parts[1])
+      await getSupabase().from('companies').delete().eq('id', parts[1])
       return json({ ok: true })
     }
 
@@ -582,9 +588,9 @@ export async function handler(event) {
       if (!validateCsrf(cookieHeader, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
-      await supabase.from('payments').delete().eq('contract_id', parts[1])
-      await supabase.from('additives').delete().eq('contract_id', parts[1])
-      await supabase.from('contracts').delete().eq('id', parts[1])
+      await getSupabase().from('payments').delete().eq('contract_id', parts[1])
+      await getSupabase().from('additives').delete().eq('contract_id', parts[1])
+      await getSupabase().from('contracts').delete().eq('id', parts[1])
       await audit(user.id, 'DELETE', 'contract', parts[1], `Contrato ${parts[1]} excluido por ${user.username}`)
       return json({ ok: true })
     }
@@ -598,7 +604,7 @@ export async function handler(event) {
       if (!validateCsrf(cookieHeader, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
-      await supabase.from('payments').delete().eq('id', parts[1])
+      await getSupabase().from('payments').delete().eq('id', parts[1])
       await audit(user.id, 'DELETE', 'payment', parts[1], `Pagamento ${parts[1]} excluido por ${user.username}`)
       return json({ ok: true })
     }
@@ -609,12 +615,12 @@ export async function handler(event) {
         const authErr = requireAuth(user)
         if (authErr) return authErr
         const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios] = await Promise.all([
-          supabase.from('contracts').select('*').order('created_at', { ascending: false }),
-          supabase.from('payments').select('*').order('vencimento'),
-          supabase.from('users').select('id, username, full_name, role, created_at').order('id'),
-          supabase.from('additives').select('*').order('created_at'),
-          supabase.from('companies').select('*').order('nome'),
-          supabase.from('destinatarios').select('*').order('criado_em'),
+          getSupabase().from('contracts').select('*').order('created_at', { ascending: false }),
+          getSupabase().from('payments').select('*').order('vencimento'),
+          getSupabase().from('users').select('id, username, full_name, role, created_at').order('id'),
+          getSupabase().from('additives').select('*').order('created_at'),
+          getSupabase().from('companies').select('*').order('nome'),
+          getSupabase().from('destinatarios').select('*').order('criado_em'),
         ])
         return json({
           contratos: contratos.data || [],
@@ -645,7 +651,7 @@ export async function handler(event) {
           }
           const pgto = c.pgtoConfig || {}
           const arquivoJson = c.arquivo ? JSON.stringify(c.arquivo) : null
-          const { data: existing } = await supabase.from('contracts').select('id').eq('id', cid).single()
+          const { data: existing } = await getSupabase().from('contracts').select('id').eq('id', cid).single()
           const vals = {
             numero, fornecedor: (c.parte || '').trim(), cnpj: (c.doc || '').trim(),
             objeto: (c.objeto || '').trim(), valor_total: parseFloat(c.valor || 0),
@@ -657,20 +663,20 @@ export async function handler(event) {
             forma_pagamento: pgto.forma, arquivo_contrato: arquivoJson
           }
           if (existing) {
-            await supabase.from('contracts').update({ ...vals, updated_at: new Date().toISOString() }).eq('id', cid)
+            await getSupabase().from('contracts').update({ ...vals, updated_at: new Date().toISOString() }).eq('id', cid)
           } else {
-            await supabase.from('contracts').insert({ id: cid, ...vals, created_by: 1 })
+            await getSupabase().from('contracts').insert({ id: cid, ...vals, created_by: 1 })
           }
           importados.contratos++
 
           if (c.aditivos?.length) {
-            await supabase.from('additives').delete().eq('contract_id', cid)
+            await getSupabase().from('additives').delete().eq('contract_id', cid)
             for (const a of c.aditivos) {
               if (a.arquivo?.data?.length > MAX_BASE64) {
                 return json({ ok: false, erro: 'Arquivo de aditivo excede 10MB.' }, 400)
               }
               const arqJson = a.arquivo ? JSON.stringify(a.arquivo) : null
-              await supabase.from('additives').insert({
+              await getSupabase().from('additives').insert({
                 id: a.id || crypto.randomUUID(), contract_id: cid, numero: a.numero,
                 data_aditivo: a.data || '', tipo: a.tipo, nova_data_fim: a.novaData,
                 acrescimo_valor: a.novoValor, descricao: a.objeto || '',
@@ -684,7 +690,7 @@ export async function handler(event) {
         const pagDados = body.pagamentos || []
         const contratosPag = new Set(pagDados.filter(p => p.contratoId).map(p => p.contratoId))
         for (const cid of contratosPag) {
-          await supabase.from('payments').delete().eq('contract_id', cid)
+          await getSupabase().from('payments').delete().eq('contract_id', cid)
         }
         for (const p of pagDados) {
           const pid = (p.id || '').trim() || crypto.randomUUID()
@@ -698,7 +704,7 @@ export async function handler(event) {
           const valor = parseFloat(p.valor || 0)
           const dataPag = (p.dataPagamento || '').trim() || null
           const comprovanteJson = p.comprovante ? JSON.stringify(p.comprovante) : null
-          await supabase.from('payments').insert({
+          await getSupabase().from('payments').insert({
             id: pid, contract_id: cid, descricao, vencimento, valor,
             contrato_num: (p.contratoNum || '').trim() || null,
             data_pagamento: dataPag, valor_pago: safeFloat(p.valorPago) || (dataPag ? valor : null),
@@ -713,14 +719,14 @@ export async function handler(event) {
           const did = (d.id || '').trim()
           const email = (d.email || '').trim()
           if (!did || !email) { importados.ignorados++; continue }
-          const { data: existing } = await supabase.from('destinatarios').select('id').eq('id', did).single()
+          const { data: existing } = await getSupabase().from('destinatarios').select('id').eq('id', did).single()
           if (existing) {
-            await supabase.from('destinatarios').update({
+            await getSupabase().from('destinatarios').update({
               email, nome: (d.nome || '').trim(),
               empresa_ids: JSON.stringify(d.empresaIds || [])
             }).eq('id', did)
           } else {
-            await supabase.from('destinatarios').insert({
+            await getSupabase().from('destinatarios').insert({
               id: did, email, nome: (d.nome || '').trim(),
               empresa_ids: JSON.stringify(d.empresaIds || [])
             })
