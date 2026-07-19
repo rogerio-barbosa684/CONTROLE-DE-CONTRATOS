@@ -2217,7 +2217,7 @@ function renderContratos() {
         <button class="btn btn-sm btn-warning" onclick="editarContrato('${c.id}')">Editar</button>
         <button class="btn btn-sm btn-warning" onclick="abrirAditivo('${c.id}')">Adit</button>
         <button class="btn btn-sm ${userInativo ? 'btn-secondary' : 'btn-warning'}" onclick="inativarContrato('${c.id}')">${userInativo ? 'Ativar' : 'Inat'}</button>
-        ${isAdmin ? `<button class="btn btn-sm btn-danger" onclick="excluirContrato('${c.id}')">Exc</button>` : ''}
+        ${isAdmin ? `<button class="btn btn-sm btn-danger" onclick="excluirContrato('${c.id}')">Excluir</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -2345,12 +2345,14 @@ function editarContrato(id) {
 
 function excluirContrato(id) {
   if (!confirm('Excluir este contrato e todos os seus pagamentos?')) return;
-  fetch('/api/contracts/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
-  saveContratos(getContratos().filter(c => c.id !== id));
-  savePagamentos(getPagamentos().filter(p => p.contratoId !== id));
-  syncToServer();
-  renderContratos();
-  renderDashboard();
+  getCsrfToken().then(() => {
+    fetch('/api/contracts/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
+    saveContratos(getContratos().filter(c => c.id !== id));
+    savePagamentos(getPagamentos().filter(p => p.contratoId !== id));
+    syncToServer();
+    renderContratos();
+    renderDashboard();
+  });
 }
 
 function inativarContrato(id) {
