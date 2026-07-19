@@ -2,6 +2,7 @@
   command = "npm install"
   functions = "netlify/functions"
   publish = "."
+  environment = { NODE_VERSION = "20" }
 
 [[redirects]]
   from = "/api/*"
