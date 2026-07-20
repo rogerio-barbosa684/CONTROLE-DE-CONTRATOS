@@ -1583,7 +1583,9 @@ function excluirEmpresa(id) {
   if (!confirm('Excluir esta empresa?')) return;
   const empresas = getEmpresas().filter(e => e.id !== id);
   saveEmpresas(empresas);
-  fetch('/api/companies/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
+  getCsrfToken().then(() => {
+    fetch('/api/companies/' + id, { method:'DELETE', headers:csrfHeaders() });
+  });
   limparFormEmpresa();
   renderEmpresasConfig();
   popularEmpresaSelect();
@@ -1598,7 +1600,9 @@ function inativarEmpresa(id) {
   if (!e) return;
   e.active = e.active === 0 ? 1 : 0;
   saveEmpresas(empresas);
-  fetch('/api/companies/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: e.active }) }).catch(() => {});
+  getCsrfToken().then(() => {
+    fetch('/api/companies/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: e.active }) });
+  });
   renderEmpresasConfig();
   popularEmpresaSelect();
   popularEmpresaCheckboxes();
@@ -1727,7 +1731,7 @@ function syncToServer() {
     fetch('/api/sync', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
       body:JSON.stringify({ contratos: cachedContratos || [], pagamentos: cachedPagamentos || [], destinatarios: cachedDestinatarios || [] })
-    }).catch(() => {});
+    });
   });
 }
 
@@ -2346,7 +2350,7 @@ function editarContrato(id) {
 function excluirContrato(id) {
   if (!confirm('Excluir este contrato e todos os seus pagamentos?')) return;
   getCsrfToken().then(() => {
-    fetch('/api/contracts/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
+    fetch('/api/contracts/' + id, { method:'DELETE', headers:csrfHeaders() });
     saveContratos(getContratos().filter(c => c.id !== id));
     savePagamentos(getPagamentos().filter(p => p.contratoId !== id));
     syncToServer();
@@ -2361,11 +2365,11 @@ function inativarContrato(id) {
   if (!c) return;
   c.active = c.active === 0 ? 1 : 0;
   saveContratos(contratos);
-  fetch('/api/contracts/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: c.active }) }).catch(() => {});
+  getCsrfToken().then(() => {
+    fetch('/api/contracts/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: c.active }) });
+  });
   syncToServer();
   renderContratos();
-  renderDashboard();
-  mostrarToast(`Contrato ${c.active ? 'ativado' : 'inativado'} com sucesso.`, 'sucesso');
 }
 
 // ===================== ADITIVO =====================
@@ -2656,7 +2660,9 @@ async function confirmarBaixa() {
 
 function excluirPgto(id) {
   if (!confirm('Excluir este pagamento?')) return;
-  fetch('/api/payments/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
+  getCsrfToken().then(() => {
+    fetch('/api/payments/' + id, { method:'DELETE', headers:csrfHeaders() });
+  });
   savePagamentos(getPagamentos().filter(p=>p.id!==id));
   syncToServer();
   renderPagamentos();
