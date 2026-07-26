@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 *.pyo
 contratos.db
+database.db
 uploads/*
 !uploads/.gitkeep
 .env
@@ -17,4 +18,21 @@ key.pem
 node_modules/
 .netlify/
 script*/
+cookies.txt
+env_vars.json
+site_id.json
+site_info.json
+login_*.json
+*_body.json
+deploy_info.json
+create_env.json
+alter_query.json
+*.log
+flask_debug.log
+flask_err.txt
+flask_stderr.log
+flask_stdout.log
+erros.log
+erro.txt
+deploy-netlify.zip
 

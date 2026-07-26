@@ -1,4 +1,4 @@
-import os, re, sqlite3, uuid, calendar, smtplib, ssl, json, traceback, html, base64, secrets, socket, ipaddress
+import os, re, sqlite3, uuid, calendar, smtplib, ssl, json, traceback, html, base64, secrets, socket, ipaddress, logging, io, requests
 from datetime import datetime, date, timedelta
 from email.mime.text import MIMEText
 from flask import (Flask, request, session, g, send_from_directory, jsonify, abort)
@@ -9,6 +9,11 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography import x509
 from cryptography.x509.oid import NameOID
+import fitz
+import pytesseract
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+import google.generativeai as genai
+from extrator_contrato import extrair_resumo_contrato, formatar_resumo
 
 def _load_env():
     global BASE_DIR
@@ -56,8 +61,31 @@ app.config.update(
 DATABASE = os.path.join(BASE_DIR, "contratos.db")
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 CONFIG_FILE = os.path.join(BASE_DIR, 'config_email.json')
+LOG_FILE = os.path.join(BASE_DIR, 'erros.log')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    encoding='utf-8'
+)
+logging.getLogger().addHandler(logging.StreamHandler())
+
+# ─── LIMPEZA AUTOMATICA DE LOGS (1 ano) ─────────────────────────────────
+try:
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE, encoding='utf-8') as f:
+            linhas = f.readlines()
+        if len(linhas) > 1000:
+            um_ano_atras = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+            novas = [l for l in linhas if l[:10] >= um_ano_atras]
+            if len(novas) < len(linhas):
+                with open(LOG_FILE, 'w', encoding='utf-8') as f:
+                    f.writelines(novas)
+                print(f"[LOG] erros.log limpo: {(len(linhas)-len(novas))} linhas removidas")
+except Exception:
+    pass
 # ─── BANCO DE DADOS ──────────────────────────────────────────────────────────
 
 def get_db():
@@ -96,6 +124,13 @@ def add_security_headers(response):
     if os.environ.get("HTTPS", "0") == "1":
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'"
+    allowed_origins = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
+    origin = request.headers.get('Origin')
+    if origin and origin in allowed_origins:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-CSRF-Token'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
     return response
 
 @app.before_request
@@ -110,6 +145,13 @@ def session_timeout():
         session.clear()
         return jsonify({"ok": False, "erro": "Sessao expirada. Faca login novamente."}), 401
     session['_last_active'] = now
+    session_pwd_changed = session.get('_password_changed_at')
+    if session_pwd_changed is not None:
+        user = query_db("SELECT password_changed_at FROM users WHERE id=?", (session['user_id'],), one=True)
+        if user and user.get('password_changed_at'):
+            if user['password_changed_at'] != session_pwd_changed:
+                session.clear()
+                return jsonify({"ok": False, "erro": "Sessao invalidada. Faca login novamente."}), 401
 
 def uid():
     return uuid.uuid4().hex
@@ -170,6 +212,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         full_name TEXT NOT NULL,
+        email TEXT DEFAULT '',
         password_hash TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'user',
         active INTEGER NOT NULL DEFAULT 1,
@@ -260,6 +303,9 @@ def init_db():
         ('arquivo_contrato', 'contracts'), ('tipo', 'contracts'), ('empresa_id', 'contracts'), ('forma_pagamento', 'contracts'),
         ('comprovante', 'payments'), ('contrato_num', 'payments'),
         ('arquivo_contrato', 'additives'),
+        ('active', 'companies'), ('active', 'contracts'),
+        ('email', 'users'), ('password_changed_at', 'users'),
+        ('resumo', 'contracts'), ('resumo', 'additives'),
     ]:
         try:
             cols = [r['name'] for r in db.execute(f"PRAGMA table_info({tbl})").fetchall()]
@@ -291,13 +337,23 @@ def init_db():
     elif admin_exists:
         print("[INFO] Admin ja existe. Para alterar a senha, defina ADMIN_PASSWORD no .env e reinicie.")
 
+    # Limpa audit_log com mais de 1 ano
+    try:
+        limite = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+        db.execute("DELETE FROM audit_log WHERE created_at < ?", (limite,))
+        db.commit()
+    except Exception:
+        pass
+
 # ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 def audit(action, entity, entity_id="", details=""):
+    user = session.get("username", "desconhecido")
     execute_db(
         "INSERT INTO audit_log (user_id,action,entity,entity_id,details) VALUES(?,?,?,?,?)",
         (session.get("user_id"), action, entity, entity_id, details)
     )
+    app.logger.info("AUDIT: %s - %s %s %s | %s", user, action, entity, entity_id, details)
 
 def money(v):
     try:
@@ -349,12 +405,29 @@ def validar_cpf_cnpj(valor):
         s1 = sum(int(nums[i]) * p1[i] for i in range(12))
         d1 = 11 - (s1 % 11)
         if d1 >= 10: d1 = 0
-        p2 = [6,5,4,3,2,9,8,7,6,5,4,3,2]
+        p2 = [6,5,3,2,9,8,7,6,5,4,3,2]
         s2 = sum(int(nums[i]) * p2[i] for i in range(13))
         d2 = 11 - (s2 % 11)
         if d2 >= 10: d2 = 0
         return int(nums[12]) == d1 and int(nums[13]) == d2
     return True
+
+def validar_senha_forte(senha):
+    if len(senha) < 8:
+        return False, "Senha deve ter no minimo 8 caracteres"
+    if not re.search(r'[A-Z]', senha):
+        return False, "Senha deve conter pelo menos 1 letra maiuscula"
+    if not re.search(r'[a-z]', senha):
+        return False, "Senha deve conter pelo menos 1 letra minuscula"
+    if not re.search(r'[0-9]', senha):
+        return False, "Senha deve conter pelo menos 1 numero"
+    return True, ""
+
+def validar_email_server(email):
+    if not email:
+        return True
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
 
 def contract_status(fim):
     try:
@@ -393,26 +466,6 @@ def validate_file_data(obj):
         return False
     return True
 
-# ─── ROTAS ESTÁTICAS ────────────────────────────────────────────────────────
-
-@app.route('/')
-def index():
-    return send_from_directory('.', 'index.html')
-
-@app.route('/extrair')
-def serve_extract():
-    return send_from_directory(".", "extract.html")
-
-@app.route('/uploads/<filename>')
-def serve_upload(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
-
-@app.route('/<path:filename>')
-def static_files(filename):
-    if filename.startswith('api/') or filename.startswith('uploads/'):
-        return jsonify({"ok": False, "erro": "Nao encontrado"}), 404
-    return send_from_directory('.', filename)
-
 # ─── API DE AUTENTICAÇÃO ────────────────────────────────────────────────────
 
 @app.route('/api/csrf-token')
@@ -423,7 +476,7 @@ def api_csrf_token():
 def api_me():
     if 'user_id' not in session:
         return jsonify({"ok": False, "user": None}), 401
-    user = query_db("SELECT id, username, full_name, role FROM users WHERE id=?", (session['user_id']), one=True)
+    user = query_db("SELECT id, username, full_name, role FROM users WHERE id=?", (session['user_id'],), one=True)
     return jsonify({"ok": True, "user": user, "csrf_token": generate_csrf_token()})
 
 login_attempts = {}
@@ -462,12 +515,14 @@ def api_login():
         login_attempts.pop(ip, None)
         session.update({
             'user_id': user['id'], 'username': user['username'],
-            'full_name': user['full_name'], 'role': user['role']
+            'full_name': user['full_name'], 'role': user['role'],
+            '_password_changed_at': user.get('password_changed_at') or ''
         })
         audit("LOGIN", "user", str(user['id']), f"Login: {user['username']}")
         return jsonify({
             "ok": True,
-            "user": {"id": user['id'], "username": user['username'], "full_name": user['full_name'], "role": user['role']}
+            "user": {"id": user['id'], "username": user['username'], "full_name": user['full_name'], "role": user['role']},
+            "csrf_token": generate_csrf_token()
         })
     attempts, _ = login_attempts.get(ip, (0, None))
     attempts += 1
@@ -489,7 +544,10 @@ def api_logout():
 def api_users_list():
     if 'user_id' not in session:
         return jsonify({"ok": False, "erro": "Nao autenticado"}), 401
-    users = query_db("SELECT id, username, full_name, role, active, created_at FROM users ORDER BY id")
+    admin_err = require_admin()
+    if admin_err:
+        return admin_err
+    users = query_db("SELECT id, username, full_name, email, role, active, created_at FROM users ORDER BY id")
     return jsonify(users)
 
 @app.route('/api/users', methods=['POST'])
@@ -504,15 +562,22 @@ def api_users_create():
     data = request.get_json(silent=True) or {}
     username = data.get('username', '').strip()
     full_name = data.get('full_name', '').strip()
+    email = data.get('email', '').strip()
     password = data.get('password', '').strip()
     role = data.get('role', 'user').strip()
     if not username or not full_name or not password:
         return jsonify({"ok": False, "erro": "Preencha todos os campos"}), 400
+    if email and not validar_email_server(email):
+        return jsonify({"ok": False, "erro": "Email invalido"}), 400
+    senha_ok, senha_erro = validar_senha_forte(password)
+    if not senha_ok:
+        return jsonify({"ok": False, "erro": senha_erro}), 400
     if query_db("SELECT id FROM users WHERE username=?", (username,), one=True):
         return jsonify({"ok": False, "erro": "Usuario ja existe"}), 400
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     user_id = execute_db(
-        "INSERT INTO users (username,full_name,password_hash,role) VALUES (?,?,?,?)",
-        (username, full_name, hash_password(password), role)
+        "INSERT INTO users (username,full_name,email,password_hash,role,password_changed_at) VALUES (?,?,?,?,?,?)",
+        (username, full_name, email, hash_password(password), role, now_str)
     )
     audit("CREATE", "user", "", f"Usuario {username} criado por {session.get('username')}")
     return jsonify({"ok": True, "user": {"id": user_id}})
@@ -535,9 +600,20 @@ def api_users_modify(uid):
             return jsonify({"ok": True})
         data = request.get_json(silent=True) or {}
         full_name = data.get('full_name', '').strip()
+        email = data.get('email', '').strip()
         role = data.get('role', 'user').strip()
         active = 1 if data.get('active', True) else 0
-        execute_db("UPDATE users SET full_name=?, role=?, active=? WHERE id=?", (full_name, role, active, uid))
+        password = data.get('password', '').strip()
+        if email and not validar_email_server(email):
+            return jsonify({"ok": False, "erro": "Email invalido"}), 400
+        if password:
+            senha_ok, senha_erro = validar_senha_forte(password)
+            if not senha_ok:
+                return jsonify({"ok": False, "erro": senha_erro}), 400
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            execute_db("UPDATE users SET full_name=?, email=?, role=?, active=?, password_hash=?, password_changed_at=? WHERE id=?", (full_name, email, role, active, hash_password(password), now_str, uid))
+        else:
+            execute_db("UPDATE users SET full_name=?, email=?, role=?, active=? WHERE id=?", (full_name, email, role, active, uid))
         audit("UPDATE", "user", str(uid), f"Usuario {uid} atualizado por {session.get('username')}")
         return jsonify({"ok": True})
     except Exception as e:
@@ -552,19 +628,29 @@ def require_admin():
 
 # ─── API DE EXCLUSAO ─────────────────────────────────────────────────────────
 
-@app.route('/api/contracts/<contract_id>', methods=['DELETE'])
-def api_delete_contract(contract_id):
+@app.route('/api/contracts/<contract_id>', methods=['PUT', 'DELETE'])
+def api_modify_contract(contract_id):
     if not validate_csrf():
         return jsonify({"ok": False, "erro": "CSRF invalido"}), 403
     if 'user_id' not in session:
         return jsonify({"ok": False, "erro": "Nao autenticado"}), 401
-    admin_err = require_admin()
-    if admin_err:
-        return admin_err
-    execute_db("DELETE FROM payments WHERE contract_id=?", (contract_id,))
-    execute_db("DELETE FROM additives WHERE contract_id=?", (contract_id,))
-    execute_db("DELETE FROM contracts WHERE id=?", (contract_id,))
-    audit("DELETE", "contract", contract_id, f"Contrato {contract_id} excluido por {session.get('username')}")
+
+    if request.method == 'DELETE':
+        admin_err = require_admin()
+        if admin_err:
+            return admin_err
+        execute_db("DELETE FROM payments WHERE contract_id=?", (contract_id,))
+        execute_db("DELETE FROM additives WHERE contract_id=?", (contract_id,))
+        execute_db("DELETE FROM contracts WHERE id=?", (contract_id,))
+        audit("DELETE", "contract", contract_id, f"Contrato {contract_id} excluido por {session.get('username')}")
+        return jsonify({"ok": True})
+
+    dados = request.get_json(silent=True) or {}
+    upd = {}
+    if 'active' in dados:
+        upd['active'] = 1 if dados['active'] not in (0, '0', False, None) else 0
+    if upd:
+        execute_db(f"UPDATE contracts SET {', '.join(f'{k}=?' for k in upd)} WHERE id=?", (*upd.values(), contract_id))
     return jsonify({"ok": True})
 
 @app.route('/api/payments/<payment_id>', methods=['DELETE'])
@@ -587,10 +673,16 @@ def api_sync_get():
     if 'user_id' not in session:
         return jsonify({"ok": False, "erro": "Nao autenticado"}), 401
     contratos = query_db("SELECT * FROM contracts ORDER BY created_at DESC")
+    for c in contratos:
+        val = c.get('active')
+        c['active'] = 1 if val is not None and val != 0 and val != '0' else 0
     pagamentos = query_db("SELECT * FROM payments ORDER BY vencimento ASC")
     usuarios = query_db("SELECT id, username, full_name, role, created_at FROM users ORDER BY id")
     aditivos = query_db("SELECT * FROM additives ORDER BY created_at ASC")
     empresas = query_db("SELECT * FROM companies ORDER BY nome ASC")
+    for e in empresas:
+        val = e.get('active')
+        e['active'] = 1 if val is not None and val != 0 and val != '0' else 0
     destinatarios = query_db("SELECT * FROM destinatarios ORDER BY criado_em ASC")
     return jsonify({"contratos": contratos, "pagamentos": pagamentos, "usuarios": usuarios, "aditivos": aditivos, "empresas": empresas, "destinatarios": destinatarios})
 
@@ -614,6 +706,9 @@ def api_sync_post():
         pgto = c.get("pgtoConfig") or {}
         if c.get("arquivo") and not validate_file_data(c["arquivo"]):
             return jsonify({"ok": False, "erro": f"Arquivo do contrato {numero} excede {MAX_FILE_MB}MB."}), 400
+        cnpj_val = (c.get("doc") or "").strip()
+        if cnpj_val and not validar_cpf_cnpj(cnpj_val):
+            return jsonify({"ok": False, "erro": f"CPF/CNPJ invalido no contrato {numero}: {cnpj_val}"}), 400
         arquivo_json = json.dumps(c["arquivo"], ensure_ascii=False) if c.get("arquivo") else None
         vals = (
             numero, (c.get("parte") or "").strip(), (c.get("doc") or "").strip(),
@@ -727,7 +822,11 @@ def api_sync_post():
 @app.route('/api/companies', methods=['GET', 'POST'])
 def api_companies():
     if request.method == 'GET':
-        return jsonify(query_db("SELECT * FROM companies ORDER BY nome ASC"))
+        empresas = query_db("SELECT * FROM companies ORDER BY nome ASC")
+        for e in empresas:
+            val = e.get('active')
+            e['active'] = 1 if val is not None and val != 0 and val != '0' else 0
+        return jsonify(empresas)
     if not validate_csrf():
         return jsonify({"ok": False, "erro": "CSRF invalido"}), 403
     if 'user_id' not in session:
@@ -743,23 +842,41 @@ def api_companies():
     if not nome:
         return jsonify({"ok": False, "erro": "Nome da empresa e obrigatorio."}), 400
     cnpj = (dados.get('cnpj') or '').strip()
+    active = dados.get('active')
     existing = query_db("SELECT id FROM companies WHERE id=?", (cid,), one=True)
     if existing:
-        execute_db("UPDATE companies SET nome=?, cnpj=? WHERE id=?", (nome, cnpj, cid))
+        if active is not None:
+            execute_db("UPDATE companies SET nome=?, cnpj=?, active=? WHERE id=?", (nome, cnpj, 1 if active not in (0, '0', False, None) else 0, cid))
+        else:
+            execute_db("UPDATE companies SET nome=?, cnpj=? WHERE id=?", (nome, cnpj, cid))
     else:
-        execute_db("INSERT INTO companies (id, nome, cnpj) VALUES (?,?,?)", (cid, nome, cnpj))
+        execute_db("INSERT INTO companies (id, nome, cnpj, active) VALUES (?,?,?,?)", (cid, nome, cnpj, 1 if active is None or active not in (0, '0', False, None) else 0))
     return jsonify({"ok": True, "id": cid})
 
-@app.route('/api/companies/<cid>', methods=['DELETE'])
-def api_delete_company(cid):
+@app.route('/api/companies/<cid>', methods=['PUT', 'DELETE'])
+def api_modify_company(cid):
     if not validate_csrf():
         return jsonify({"ok": False, "erro": "CSRF invalido"}), 403
     if 'user_id' not in session:
         return jsonify({"ok": False, "erro": "Nao autenticado"}), 401
-    admin_err = require_admin()
-    if admin_err:
-        return admin_err
-    execute_db("DELETE FROM companies WHERE id=?", (cid,))
+
+    if request.method == 'DELETE':
+        admin_err = require_admin()
+        if admin_err:
+            return admin_err
+        execute_db("DELETE FROM companies WHERE id=?", (cid,))
+        return jsonify({"ok": True})
+
+    dados = request.get_json(silent=True) or {}
+    upd = {}
+    if 'active' in dados:
+        upd['active'] = 1 if dados['active'] not in (0, '0', False, None) else 0
+    if 'nome' in dados:
+        upd['nome'] = (dados['nome'] or '').strip()
+    if 'cnpj' in dados:
+        upd['cnpj'] = (dados['cnpj'] or '').strip()
+    if upd:
+        execute_db(f"UPDATE companies SET {', '.join(f'{k}=?' for k in upd)} WHERE id=?", (*upd.values(), cid))
     return jsonify({"ok": True})
 
 # ─── API DE E-MAIL / LEMBRETE ───────────────────────────────────────────────
@@ -1097,6 +1214,216 @@ def api_enviar_alertas_contratos():
         partes.append(f'Erros: {"; ".join(erros)}')
     return jsonify({"ok": True, "msg": '. '.join(partes)})
 
+# ─── RESUMO DE CONTRATOS VIA GEMINI ────────────────────────────────────
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+OLLAMA_API = "http://localhost:11434/api"
+OLLAMA_MODEL = "gemma3:1b"
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+def extrair_pdf(arquivo_json):
+    dados = json.loads(arquivo_json) if isinstance(arquivo_json, str) else arquivo_json
+    data_url = dados.get("data") or dados.get("filePath", "")
+    if not data_url:
+        return None
+    if "," in data_url:
+        b64 = data_url.split(",", 1)[1]
+    else:
+        b64 = data_url
+    return base64.b64decode(b64)
+
+def extrair_texto_pdf(arquivo_json):
+    try:
+        raw = extrair_pdf(arquivo_json)
+        if raw is None:
+            return None
+        doc = fitz.open(stream=raw, filetype="pdf")
+        texto = "\n".join(page.get_text() for page in doc)
+        doc.close()
+        return texto.strip()
+    except Exception as e:
+        app.logger.error("Erro ao extrair texto do PDF: %s", e)
+        return None
+
+def pdf_para_imagens(arquivo_json):
+    try:
+        raw = extrair_pdf(arquivo_json)
+        if raw is None:
+            return None
+        doc = fitz.open(stream=raw, filetype="pdf")
+        imagens = []
+        for page in doc:
+            pix = page.get_pixmap(dpi=150)
+            img_bytes = pix.tobytes("png")
+            imagens.append(img_bytes)
+        doc.close()
+        return imagens
+    except Exception as e:
+        app.logger.error("Erro ao converter PDF para imagens: %s", e)
+        return None
+
+def _prompt_resumo():
+    return (
+        "Voce e um assistente juridico especializado em contratos. "
+        "Leia o texto abaixo e faca um resumo claro e objetivo em portugues.\n\n"
+        "INSTRUCOES:\n"
+        "1. Resuma em 2 a 3 paragrafos.\n"
+        "2. Identifique as partes envolvidas (exequente e executada).\n"
+        "3. Informe o valor original da divida e o valor acordado.\n"
+        "4. Detalhe os prazos de pagamento: datas, valores das parcelas e forma de pagamento.\n"
+        "5. Ao final, liste com bullet points os PONTOS DE ATENCAO:\n"
+        "   - Prazos de vencimento proximos\n"
+        "   - Multas ou clausulas penal\n"
+        "   - Valores relevantes\n"
+        "   - Riscos ou pontos que merecem cuidado especial\n"
+        "   - Qualquer obrigacao importante\n\n"
+        "TEXTO DO DOCUMENTO:\n"
+    )
+
+def _chamar_gemini(texto):
+    if not GEMINI_API_KEY:
+        return None
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        resp = model.generate_content(_prompt_resumo() + texto[:8000])
+        resp_text = resp.text.strip()
+        if len(resp_text) > 50:
+            return resp_text
+    except Exception as e:
+        app.logger.error("Gemini falhou: %s", str(e))
+    return None
+
+def _chamar_ollama(texto):
+    try:
+        r = requests.post(f"{OLLAMA_API}/generate", json={
+            "model": OLLAMA_MODEL,
+            "prompt": _prompt_resumo() + texto[:3000],
+            "stream": False
+        }, timeout=180)
+        if r.status_code == 200:
+            resp = r.json().get("response", "").strip()
+            if len(resp) > 50:
+                return resp
+    except Exception:
+        pass
+    return None
+
+def gerar_resumo_ollama(texto):
+    # Extrair dados estruturados via regex (rapido, sem LLM)
+    dados = extrair_resumo_contrato(texto)
+    resumo = formatar_resumo(dados)
+    return resumo, None
+
+def gerar_resumo_ollama_imagens(imagens):
+    try:
+        from PIL import Image
+        textos = []
+        for i, img_bytes in enumerate(imagens):
+            img = Image.open(io.BytesIO(img_bytes))
+            t = pytesseract.image_to_string(img, lang="por").strip()
+            if len(t) > 10:
+                textos.append(t)
+        texto_completo = "\n\n".join(textos)
+        if not texto_completo or len(texto_completo) < 20:
+            return None, "Nao foi possivel reconhecer texto nas imagens"
+    except Exception as e:
+        app.logger.error("OCR falhou: %s", str(e))
+        return None, str(e)
+
+    # Extrair dados estruturados via regex (rapido, sem LLM)
+    dados = extrair_resumo_contrato(texto_completo)
+    resumo = formatar_resumo(dados)
+
+    return resumo, None
+
+@app.route('/api/resumo', methods=['GET', 'POST'])
+def api_resumo():
+    if 'user_id' not in session:
+        return jsonify({"ok": False, "erro": "Nao autenticado"}), 401
+
+    data = request.get_json(silent=True) or {}
+    entity = data.get('entity', '')
+    entity_id = data.get('entity_id', '')
+
+    if entity not in ('contract', 'additive'):
+        return jsonify({"ok": False, "erro": "Entidade invalida. Use 'contract' ou 'additive'"}), 400
+
+    table = 'contracts' if entity == 'contract' else 'additives'
+    id_col = 'id' if entity == 'contract' else 'id'
+
+    coluna_arquivo = 'arquivo_contrato' if entity == 'contract' else 'arquivo_aditivo'
+    row = query_db(f"SELECT {coluna_arquivo} as arquivo, resumo FROM {table} WHERE {id_col}=?", (entity_id,), one=True)
+    if not row:
+        return jsonify({"ok": False, "erro": "Registro nao encontrado"}), 404
+
+    arquivo = row.get("arquivo")
+    if not arquivo:
+        return jsonify({"ok": False, "erro": "Nenhum arquivo anexado a este registro"}), 400
+
+    texto = extrair_texto_pdf(arquivo)
+    if texto and len(texto) >= 50:
+        resumo, erro = gerar_resumo_ollama(texto)
+    else:
+        imagens = pdf_para_imagens(arquivo)
+        if not imagens:
+            return jsonify({"ok": False, "erro": "Nao foi possivel extrair conteudo do PDF"}), 400
+        resumo, erro = gerar_resumo_ollama_imagens(imagens)
+
+    if erro:
+        return jsonify({"ok": False, "erro": f"Erro ao gerar resumo: {erro}"}), 500
+
+    execute_db(f"UPDATE {table} SET resumo=? WHERE {id_col}=?", (resumo, entity_id))
+    return jsonify({"ok": True, "resumo": resumo})
+
+# ─── ESTÁTICO / FALLBACK ──────────────────────────────────────────────────────
+
+@app.route('/')
+def index():
+    return send_from_directory('.', 'index.html')
+
+@app.route('/extrair')
+def serve_extract():
+    return send_from_directory(".", "extract.html")
+
+@app.route('/uploads/<filename>')
+def serve_upload(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
+ALLOWED_STATIC_EXTENSIONS = {
+    '.html', '.js', '.css', '.json',
+    '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.webp',
+    '.woff', '.woff2', '.ttf', '.eot',
+    '.pdf', '.txt', '.md',
+}
+
+BLOCKED_STATIC_FILES = {
+    '.env', '.env.example', '.env.local',
+    'config_email.json', 'contratos.db', 'database.db',
+    'key.pem', 'cert.pem',
+    'site_id.json', 'site_info.json', 'env_vars.json',
+    'cookies.txt', 'login_body.json', 'login_admin.json',
+    'deploy_info.json', 'dados.json', 'body.json',
+    'app.py', 'servidor.py', 'lembrete.py', 'extrator_contrato.py',
+    'env_body.json', 'create_env.json', 'query_body.json',
+    'lock_body.json', 'rename_body.json', 'active_body.json',
+    'patch_body.json', 'alter_query.json', 'forgot_body.json',
+}
+
+@app.route('/<path:filename>')
+def static_files(filename):
+    if filename.startswith('api/') or filename.startswith('uploads/'):
+        return jsonify({"ok": False, "erro": "Nao encontrado"}), 404
+    basename = os.path.basename(filename)
+    if basename in BLOCKED_STATIC_FILES:
+        return jsonify({"ok": False, "erro": "Nao encontrado"}), 404
+    ext = os.path.splitext(basename)[1].lower()
+    if ext not in ALLOWED_STATIC_EXTENSIONS:
+        return jsonify({"ok": False, "erro": "Nao encontrado"}), 404
+    return send_from_directory('.', filename)
+
 # ─── SSL / HTTPS ─────────────────────────────────────────────────────────────
 
 def _ensure_ssl_cert():
@@ -1163,7 +1490,12 @@ if __name__ == "__main__":
         except Exception:
             pass
         print("=" * 50)
-        app.run(host='0.0.0.0', port=port, debug=debug_mode, ssl_context=ssl_ctx)
+        if debug_mode:
+            app.run(host='0.0.0.0', port=port, debug=True, ssl_context=ssl_ctx)
+        else:
+            from waitress import serve
+            print("[WAITRESS] Servidor production iniciado")
+            serve(app, host='0.0.0.0', port=port, url_scheme='https' if https_enabled else 'http')
     except Exception as e:
         app.logger.error("Erro ao iniciar: %s", traceback.format_exc())
         print("\n" + "=" * 50)

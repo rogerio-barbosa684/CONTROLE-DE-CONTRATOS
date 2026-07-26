@@ -5,6 +5,21 @@ import crypto from 'crypto'
 
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex')
 
+const forgotPasswordAttempts = new Map()
+function checkForgotPasswordRateLimit(ip) {
+  const now = Date.now()
+  const windowMs = 60 * 1000
+  const maxAttempts = 3
+  const record = forgotPasswordAttempts.get(ip)
+  if (!record || (now - record.start) > windowMs) {
+    forgotPasswordAttempts.set(ip, { start: now, count: 1 })
+    return true
+  }
+  record.count++
+  if (record.count > maxAttempts) return false
+  return true
+}
+
 let _supabase = null
 function getSupabase() {
   if (_supabase) return _supabase
@@ -95,7 +110,8 @@ function deriveCsrf(userId) {
 
 function validateCsrf(user, bodyCsrf) {
   if (!user || !bodyCsrf) return false
-  return deriveCsrf(user.id) === bodyCsrf
+  const sessionCsrf = user._csrfToken || deriveCsrf(user.id)
+  return sessionCsrf === bodyCsrf
 }
 
 function requireAdmin(user) {
@@ -145,6 +161,35 @@ function safeFloat(value, def = 0) {
   if (value == null || value === '') return def
   const n = parseFloat(value)
   return isNaN(n) ? def : n
+}
+
+function validarCpfCnpj(valor) {
+  const nums = String(valor).replace(/\D/g, '')
+  if (nums.length === 11) {
+    if (nums === nums[0].repeat(11)) return false
+    let s1 = 0
+    for (let i = 0; i < 9; i++) s1 += parseInt(nums[i]) * (10 - i)
+    const d1 = (s1 * 10 % 11) % 11
+    let s2 = 0
+    for (let i = 0; i < 10; i++) s2 += parseInt(nums[i]) * (11 - i)
+    const d2 = (s2 * 10 % 11) % 11
+    return parseInt(nums[9]) === d1 && parseInt(nums[10]) === d2
+  }
+  if (nums.length === 14) {
+    if (nums === nums[0].repeat(14)) return false
+    const p1 = [5,4,3,2,9,8,7,6,5,4,3,2]
+    let s1 = 0
+    for (let i = 0; i < 12; i++) s1 += parseInt(nums[i]) * p1[i]
+    let d1 = 11 - (s1 % 11)
+    if (d1 >= 10) d1 = 0
+    const p2 = [6,5,3,2,9,8,7,6,5,4,3,2]
+    let s2 = 0
+    for (let i = 0; i < 13; i++) s2 += parseInt(nums[i]) * p2[i]
+    let d2 = 11 - (s2 % 11)
+    if (d2 >= 10) d2 = 0
+    return parseInt(nums[12]) === d1 && parseInt(nums[13]) === d2
+  }
+  return true
 }
 
 // ─── EMAIL ─────────────────────────────────────────────────────────────────
@@ -311,7 +356,7 @@ export async function handler(event) {
   const isSecure = process.env.HTTPS === '1' || host.includes('netlify.app')
 
   const user = getAuthUser(cookieHeader)
-  const csrfToken = user ? deriveCsrf(user.id) : ''
+  const csrfToken = user ? (user._csrfToken || deriveCsrf(user.id)) : ''
 
   // Session timeout check
   if (user) {
@@ -349,8 +394,9 @@ export async function handler(event) {
         return json({ ok: false, erro: 'Usuario ou senha incorretos!' }, 401)
       }
       const now = Math.floor(Date.now() / 1000)
+      const sessionCsrf = crypto.randomBytes(32).toString('hex')
       const token = jwt.sign(
-        { id: dbUser.id, username: dbUser.username, full_name: dbUser.full_name, role: dbUser.role, _lastActive: now },
+        { id: dbUser.id, username: dbUser.username, full_name: dbUser.full_name, role: dbUser.role, _lastActive: now, _csrfToken: sessionCsrf },
         JWT_SECRET,
         { expiresIn: '8h' }
       )
@@ -358,7 +404,7 @@ export async function handler(event) {
       return json({
         ok: true,
         user: { id: dbUser.id, username: dbUser.username, full_name: dbUser.full_name, role: dbUser.role },
-        csrf_token: csrfToken
+        csrf_token: sessionCsrf
       }, 200, {
         'Set-Cookie': setCookie('token', token, { secure: isSecure, maxAge: 28800 })
       })
@@ -374,6 +420,10 @@ export async function handler(event) {
 
     // ─── FORGOT PASSWORD ────────────────────────────────────────────────
     if (route === 'forgot-password' && httpMethod === 'POST') {
+      const clientIp = headers['x-forwarded-for'] || headers['client-ip'] || 'unknown'
+      if (!checkForgotPasswordRateLimit(clientIp)) {
+        return json({ ok: false, erro: 'Muitas tentativas. Aguarde 1 minuto.' }, 429)
+      }
       const { username } = body
       if (!username) return json({ ok: false, erro: 'Informe o nome de usuario.' }, 400)
       const { data: dbUser } = await getSupabase().from('users').select('*').eq('username', username).single()
@@ -397,7 +447,10 @@ export async function handler(event) {
     if (route === 'reset-password' && httpMethod === 'POST') {
       const { token, password } = body
       if (!token || !password) return json({ ok: false, erro: 'Token e nova senha sao obrigatorios.' }, 400)
-      if (password.length < 6) return json({ ok: false, erro: 'A senha deve ter no minimo 6 caracteres.' }, 400)
+      if (password.length < 8) return json({ ok: false, erro: 'A senha deve ter no minimo 8 caracteres.' }, 400)
+      if (!/[A-Z]/.test(password)) return json({ ok: false, erro: 'Senha deve conter pelo menos 1 letra maiuscula.' }, 400)
+      if (!/[a-z]/.test(password)) return json({ ok: false, erro: 'Senha deve conter pelo menos 1 letra minuscula.' }, 400)
+      if (!/[0-9]/.test(password)) return json({ ok: false, erro: 'Senha deve conter pelo menos 1 numero.' }, 400)
       const now = new Date().toISOString()
       const { data: reset } = await getSupabase().from('password_resets')
         .select('*').eq('token', token).eq('used', 0).single()
@@ -524,7 +577,9 @@ export async function handler(event) {
     if (route === 'users' && httpMethod === 'GET') {
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      const { data: users } = await getSupabase().from('users').select('id, username, full_name, email, role, active, created_at').order('id')
+      const adminErr = requireAdmin(user)
+      if (adminErr) return adminErr
+      const { data: users } = await getSupabase().from('users').select('id, username, full_name, role, active, created_at').order('id')
       return json(users)
     }
 
@@ -538,15 +593,22 @@ export async function handler(event) {
       }
       const username = (body.username || '').trim()
       const fullName = (body.full_name || '').trim()
+      const email = (body.email || '').trim()
       const password = (body.password || '').trim()
       const role = (body.role || 'user').trim()
       if (!username || !fullName || !password) {
         return json({ ok: false, erro: 'Preencha todos os campos' }, 400)
       }
+      if (email && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+        return json({ ok: false, erro: 'Email invalido' }, 400)
+      }
+      if (password.length < 8) return json({ ok: false, erro: 'Senha deve ter no minimo 8 caracteres.' }, 400)
+      if (!/[A-Z]/.test(password)) return json({ ok: false, erro: 'Senha deve conter pelo menos 1 letra maiuscula.' }, 400)
+      if (!/[a-z]/.test(password)) return json({ ok: false, erro: 'Senha deve conter pelo menos 1 letra minuscula.' }, 400)
+      if (!/[0-9]/.test(password)) return json({ ok: false, erro: 'Senha deve conter pelo menos 1 numero.' }, 400)
       const { data: existing } = await getSupabase().from('users').select('id').eq('username', username).single()
       if (existing) return json({ ok: false, erro: 'Usuario ja existe' }, 400)
       const hash = await hashPassword(password)
-      const email = (body.email || '').trim()
       const { data: newUser } = await getSupabase().from('users').insert({
         username, full_name: fullName, email, password_hash: hash, role
       }).select().single()
@@ -564,11 +626,20 @@ export async function handler(event) {
       }
       const uid = parseInt(parts[1])
       const fullName = (body.full_name || '').trim()
+      const email = (body.email || '').trim()
       const role = (body.role || 'user').trim()
       const active = body.active !== false ? 1 : 0
-      const upd = { full_name: fullName, email: (body.email || '').trim(), role, active }
+      if (email && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+        return json({ ok: false, erro: 'Email invalido' }, 400)
+      }
+      const upd = { full_name: fullName, email, role, active }
       if (body.password && body.password.trim()) {
-        upd.password_hash = await hashPassword(body.password.trim())
+        const pwd = body.password.trim()
+        if (pwd.length < 8) return json({ ok: false, erro: 'Senha deve ter no minimo 8 caracteres.' }, 400)
+        if (!/[A-Z]/.test(pwd)) return json({ ok: false, erro: 'Senha deve conter pelo menos 1 letra maiuscula.' }, 400)
+        if (!/[a-z]/.test(pwd)) return json({ ok: false, erro: 'Senha deve conter pelo menos 1 letra minuscula.' }, 400)
+        if (!/[0-9]/.test(pwd)) return json({ ok: false, erro: 'Senha deve conter pelo menos 1 numero.' }, 400)
+        upd.password_hash = await hashPassword(pwd)
       }
       await getSupabase().from('users').update(upd).eq('id', uid)
       await audit(user.id, 'UPDATE', 'user', String(uid), `Usuario ${uid} atualizado por ${user.username}`)
@@ -584,10 +655,9 @@ export async function handler(event) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
       const uid = parseInt(parts[1])
-      if (uid === 1) return json({ ok: false, erro: 'Nao e possivel excluir o usuario admin principal.' }, 400)
-      await getSupabase().from('password_resets').delete().eq('user_id', uid)
-      await getSupabase().from('users').delete().eq('id', uid)
-      await audit(user.id, 'DELETE', 'user', String(uid), `Usuario ${uid} excluido por ${user.username}`)
+      if (uid === 1) return json({ ok: false, erro: 'Nao e possivel inativar o usuario admin principal.' }, 400)
+      await getSupabase().from('users').update({ active: 0 }).eq('id', uid)
+      await audit(user.id, 'INACTIVATE', 'user', String(uid), `Usuario ${uid} inativado por ${user.username}`)
       return json({ ok: true })
     }
 
@@ -694,7 +764,7 @@ export async function handler(event) {
         const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios] = await Promise.all([
           getSupabase().from('contracts').select('*').order('created_at', { ascending: false }),
           getSupabase().from('payments').select('*').order('vencimento'),
-          getSupabase().from('users').select('id, username, full_name, email, role, created_at').order('id'),
+          getSupabase().from('users').select('id, username, full_name, role, created_at').order('id'),
           getSupabase().from('additives').select('*').order('created_at'),
           getSupabase().from('companies').select('*').order('nome'),
           getSupabase().from('destinatarios').select('*').order('criado_em'),
@@ -725,6 +795,10 @@ export async function handler(event) {
           if (!cid || !numero) { importados.ignorados++; continue }
           if (c.arquivo?.data?.length > MAX_BASE64) {
             return json({ ok: false, erro: `Arquivo do contrato ${numero} excede 10MB.` }, 400)
+          }
+          const cnpjVal = (c.doc || '').trim()
+          if (cnpjVal && !validarCpfCnpj(cnpjVal)) {
+            return json({ ok: false, erro: `CPF/CNPJ invalido no contrato ${numero}: ${cnpjVal}` }, 400)
           }
           const pgto = c.pgtoConfig || {}
           const arquivoJson = c.arquivo ? JSON.stringify(c.arquivo) : null
