@@ -31,6 +31,40 @@ function getSupabase() {
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
+const SYSTEM_PROMPT_ASSISTENTE = `Voce e o Assistente Virtual do sistema CONTROLE DE CONTRATOS E PAGAMENTOS da Ideal Alimentacao.
+Seu papel e ajudar o usuario a entender e usar o sistema. Responda SEMPRE em portugues brasileiro, de forma simples e direta.
+SOBRE O SISTEMA: Aplicacao web para gerenciar contratos, pagamentos e vencimentos de empresas.
+TELAS: 1) Dashboard - resumo com cards e vencimentos. 2) Contratos - lista e gerenciamento. 3) Novo Contrato - formulario de cadastro. 4) Pagamentos - lista de parcelas. 5) Configuracao - Usuarios, Empresas, Tipos, Destinatarios, E-mail.
+Cadastrar contrato: clique em "+ Novo Contrato", preencha obrigatorios (Numero, Tipo, Empresa, Objeto, Fornecedor, Valor, Datas), salve.
+Registrar pagamento: va em Pagamentos, clique Registrar, informe data, valor, forma de pagamento, confirme.
+Aditivo: abra detalhe do contrato, clique Registrar Aditivo, preencha dados, salve.
+Email: configure SMTP em Configuracao > E-mail. Envio manual pelos botões e automatico as 10h no servidor local.
+Usuarios: Configuracao > Usuarios, crie, edite, defina perfil e empresas.
+Empresas: Configuracao > Empresas, cadastre nome e CNPJ.`
+
+function respostaOffline(pergunta) {
+  const p = pergunta.toLowerCase()
+  if (['contrato', 'cadastr', 'novo', 'criar'].some(w => p.includes(w)))
+    return 'Para cadastrar um contrato, clique em "+ Novo Contrato" no menu. Preencha os campos obrigatorios (Numero, Tipo, Empresa, Objeto, Fornecedor, Valor, Datas) e salve.'
+  if (['pagamento', 'parcela'].some(w => p.includes(w)))
+    return 'Para registrar um pagamento, va em Pagamentos, clique em "Registrar" ao lado do pagamento pendente, informe data, valor e forma de pagamento, e confirme.'
+  if (['editar', 'alterar'].some(w => p.includes(w)))
+    return 'Para editar, va em Contratos, clique no icone de editar (lapis), altere os dados e salve.'
+  if (['aditivo', 'prorrog'].some(w => p.includes(w)))
+    return 'Para adicionar um aditivo, abra o detalhe do contrato e clique em "Registrar Aditivo". Preencha os dados e salve.'
+  if (['email', 'smtp', 'alerta', 'lembrete'].some(w => p.includes(w)))
+    return 'Configure o e-mail em Configuracao > E-mail. Informe servidor SMTP, porta, email remetente e senha. Use os botoes para envio manual.'
+  if (['usuario', 'senha', 'login'].some(w => p.includes(w)))
+    return 'Para gerenciar usuarios, va em Configuracao > Usuarios. Crie, edite, defina perfil (admin/usuario) e empresas com acesso.'
+  if (['empresa', 'cnpj'].some(w => p.includes(w)))
+    return 'Para cadastrar empresas, va em Configuracao > Empresas. Informe nome e CNPJ.'
+  if (['dashboard', 'inicio', 'resumo'].some(w => p.includes(w)))
+    return 'O Dashboard mostra resumo com cards, proximos vencimentos e contratos. Use os filtros por fornecedor/CNPJ e data.'
+  if (['tema', 'escuro', 'claro'].some(w => p.includes(w)))
+    return 'Para mudar o tema, clique no icone da lua/sol no canto superior direito do header.'
+  return 'Posso ajudar com: cadastro de contratos, pagamentos, aditivos, empresas, usuarios, configuracao de e-mail, uso do dashboard e navegacao no sistema.'
+}
+
 function json(data, status = 200, extraHeaders = {}) {
   return {
     statusCode: status,
@@ -889,6 +923,38 @@ export async function handler(event) {
         await audit(user.id, 'SYNC', 'system', '', `Sincronizacao concluida: ${JSON.stringify(importados)}`)
         return json({ ok: true, importados })
       }
+    }
+
+    // ─── ASSISTENTE VIRTUAL ─────────────────────────────────────────────────
+    if (route === 'assistente' && httpMethod === 'POST') {
+      const body = await readBody(event)
+      const pergunta = (body.pergunta || '').trim()
+      if (!pergunta) return json({ ok: false, erro: 'Pergunta vazia' }, 400)
+
+      const geminiKey = process.env.GEMINI_API_KEY || ''
+      if (!geminiKey) {
+        return json({ ok: true, resposta: respostaOffline(pergunta) })
+      }
+
+      try {
+        const prompt = SYSTEM_PROMPT_ASSISTENTE + '\n\nPERGUNTA DO USUARIO:\n' + pergunta.slice(0, 2000)
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 800 }
+          })
+        })
+        const data = await resp.json()
+        const texto = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+        if (texto && texto.length > 10) {
+          return json({ ok: true, resposta: texto })
+        }
+      } catch (e) {
+        console.error('Gemini assistente falhou:', e.message)
+      }
+      return json({ ok: true, resposta: respostaOffline(pergunta) })
     }
 
     // ─── 404 ─────────────────────────────────────────────────────────────
