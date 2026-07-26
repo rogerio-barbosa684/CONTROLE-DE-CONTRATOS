@@ -1463,7 +1463,242 @@ def _ensure_ssl_cert():
     print(f"[SSL] Certificado gerado: {cert_path}")
     return cert_path, key_path
 
+# ─── ASSISTENTE VIRTUAL ──────────────────────────────────────────────────────
+
+SYSTEM_PROMPT_ASSISTENTE = """Voce e o Assistente Virtual do sistema CONTROLE DE CONTRATOS E PAGAMENTOS da Ideal Alimentacao.
+Seu papel e ajudar o usuario a entender e usar o sistema. Responda SEMPRE em portugues brasileiro, de forma simples e direta.
+
+SOBRE O SISTEMA:
+O sistema e uma aplicacao web para gerenciar contratos, pagamentos e vencimentos de empresas. Foi desenvolvido em Python (Flask) com banco SQLite.
+
+TELAS PRINCIPAIS:
+1. DASHBOARD - Tela inicial com resumo: cards com totais, proximos vencimentos e contratos ativos. Permite filtrar por fornecedor/CNPJ/CPF e data de vencimento.
+2. CONTRATOS - Lista todos os contratos cadastrados. Permite buscar, editar, excluir e ver detalhes.
+3. NOVO CONTRATO - Formulario para cadastrar um novo contrato com todos os dados.
+4. PAGAMENTOS - Lista todas as parcelas/pagamentos. Permite filtrar por contrato e status, registrar pagamentos e anexar comprovantes.
+5. CONFIGURACAO - Sub-menu com: Usuarios, Empresas, Tipos de Servico, Destinatarios de E-mail, E-mail (SMTP), Informacoes do Sistema.
+
+COMO CADASTRAR UM CONTRATO:
+1. Clique em "+ Novo Contrato" no menu
+2. Preencha os campos obrigatorios: Numero do Contrato, Tipo, Empresa, Objeto, Fornecedor/Cliente, Valor Total, Data de Inicio, Data de Fim
+3. Se for um contrato com pagamentos, marque a checkbox e preencha: Forma de Pagamento, Quantidade de Parcelas, Dia de Vencimento, Valor da Parcela
+4. Clique em "Salvar Contrato"
+5. Os pagamentos serao criados automaticamente
+
+COMO REGISTRAR UM PAGAMENTO:
+1. Va em "Pagamentos"
+2. Clique no botao "Registrar" ao lado do pagamento pendente
+3. Informe: Data do Pagamento, Valor Pago, Forma de Pagamento
+4. Opcionalmente anexe o comprovante (imagem ou PDF)
+5. Confirme
+
+COMO EDITAR UM CONTRATO:
+1. Va em "Contratos"
+2. Clique no icone de editar (lapis) ao lado do contrato
+3. Altere os dados necessarios
+4. Salve
+
+COMO ADICIONAR ADITIVO:
+1. Abra o detalhe do contrato
+2. Clique em "Registrar Aditivo"
+3. Preencha: Numero do Aditivo, Data, Tipo, Nova Data de Fim e/ou Acrescimo de Valor
+4. Salve
+
+RECURSOS:
+- Tema claro/escuro: clique no icone da lua/sol no header
+- Alertas automaticos por e-mail para contratos proximos do vencimento
+- Resumo de contratos via IA (Gemini) quando ha arquivo PDF anexado
+- CNPJ/CPF com validacao automatica
+- Controle de acesso por empresa (cada usuario so ve contratos das empresas que tem acesso)
+
+Dicas:
+- Preencha sempre o CNPJ/CPF do fornecedor para facilitar buscas
+- Use os filtros no dashboard para ver vencimentos proximos
+- Configure o e-mail SMTP para receber alertas automaticos
+- Cadastre os tipos de servico antes de criar contratos
+
+Se o usuario perguntar algo fora do escopo do sistema, redirecione gentilmente para o tema. Seja prestativo e amigavel."""
+
+@app.route('/api/assistente', methods=['POST'])
+def api_assistente():
+    if 'user_id' not in session:
+        return jsonify({"ok": False, "erro": "Nao autenticado"}), 401
+
+    data = request.get_json(silent=True) or {}
+    pergunta = (data.get('pergunta') or '').strip()
+
+    if not pergunta:
+        return jsonify({"ok": False, "erro": "Pergunta vazia"}), 400
+
+    if not GEMINI_API_KEY:
+        return jsonify({"ok": True, "resposta": _resposta_offline(pergunta)})
+
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        resp = model.generate_content(
+            SYSTEM_PROMPT_ASSISTENTE + "\n\nPERGUNTA DO USUARIO:\n" + pergunta[:2000],
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.7,
+                max_output_tokens=800,
+            )
+        )
+        resposta = resp.text.strip()
+        if len(resposta) > 10:
+            return jsonify({"ok": True, "resposta": resposta})
+    except Exception as e:
+        app.logger.error("Gemini assistente falhou: %s", str(e))
+
+    return jsonify({"ok": True, "resposta": _resposta_offline(pergunta)})
+
+
+def _resposta_offline(pergunta):
+    p = pergunta.lower()
+    if any(w in p for w in ['contrato', 'cadastr', 'novo', 'criar']):
+        return ("Para cadastrar um contrato, clique em '+ Novo Contrato' no menu. "
+                "Preencha os campos obrigatorios (Numero, Tipo, Empresa, Objeto, Fornecedor, Valor, Datas) "
+                "e salve. Se tiver pagamentos, marque a checkbox e preencha as parcelas.")
+    if any(w in p for w in ['pagamento', 'parcela', 'pay']):
+        return ("Para registrar um pagamento, va em 'Pagamentos', clique em 'Registrar' ao lado "
+                "do pagamento pendente, informe data, valor e forma de pagamento, e confirme.")
+    if any(w in p for w in ['editar', 'alterar', 'mudar']):
+        return ("Para editar, va em 'Contratos', clique no icone de editar (lapis) ao lado do contrato, "
+                "altere os dados e salve.")
+    if any(w in p for w in ['aditivo', 'prorrog', 'acresc']):
+        return ("Para adicionar um aditivo, abra o detalhe do contrato e clique em 'Registrar Aditivo'. "
+                "Informe o numero, data, tipo (Prazo/Valor/Ambos) e os novos dados.")
+    if any(w in p for w in ['email', 'smtp', 'alerta', 'lembrete']):
+        return ("Configure o e-mail em Configuracao > E-mail. Informe servidor SMTP, porta, email remetente e senha. "
+                "Depois clique em 'Enviar Lembrete' ou 'Enviar Alertas' para notificar.")
+    if any(w in p for w in ['usuario', 'senha', 'login', 'acesso']):
+        return ("Para gerenciar usuarios, va em Configuracao > Usuarios. La voce pode criar, editar "
+                "ou excluir usuarios, definir perfil (admin/usuario) e quais empresas tem acesso.")
+    if any(w in p for w in ['empresa', 'cnpj']):
+        return ("Para cadastrar empresas, va em Configuracao > Empresas. Informe o nome e CNPJ. "
+                "As empresas sao vinculadas aos contratos e aos usuarios.")
+    if any(w in p for w in ['dashboard', 'inicio', 'resumo']):
+        return ("O Dashboard mostra um resumo com cards (totais), proximos vencimentos e contratos. "
+                "Use os filtros por fornecedor/CNPJ e data de vencimento.")
+    if any(w in p for w in ['tema', 'escuro', 'claro', 'dark']):
+        return ("Para mudar o tema, clique no icone da lua/sol no canto superior direito do header.")
+    return ("Posso ajudar com: cadastro de contratos, pagamentos, aditivos, empresas, usuarios, "
+            "configuracao de e-mail, uso do dashboard e navegacao no sistema. "
+            "Faca sua pergunta!")
+
 # ─── INICIALIZAÇÃO ───────────────────────────────────────────────────────────
+
+import threading
+
+def _enviar_emails_automaticos():
+    """Envia lembretes de pagamentos e alertas de contratos automaticamente."""
+    with app.app_context():
+        try:
+            cfg = ler_config()
+            if not cfg.get('email_remetente') or not cfg.get('email_senha'):
+                print("[EMAIL AUTO] Configuracao de e-mail nao encontrada. Pulando.")
+                return
+
+            destinatarios = query_db("SELECT * FROM destinatarios")
+            if not destinatarios:
+                print("[EMAIL AUTO] Nenhum destinatario cadastrado. Pulando.")
+                return
+
+            contratos = query_db("SELECT * FROM contracts")
+            pagamentos = query_db("SELECT * from payments")
+            empresas = query_db("SELECT * FROM empresas")
+            empresa_nomes = {e['id']: e['nome'] for e in empresas if e.get('id') and e.get('nome')}
+            hoje = date.today()
+
+            enviados = 0
+            erros = []
+
+            # Lembretes de pagamentos
+            for dest in destinatarios:
+                email = (dest.get('email') or '').strip()
+                if not email:
+                    continue
+                empresa_ids = dest.get('empresaIds') or dest.get('empresa_ids') or ''
+                if isinstance(empresa_ids, str):
+                    empresa_ids = [int(x.strip()) for x in empresa_ids.split(',') if x.strip().isdigit()]
+                dest_nome = dest.get('nome', '')
+                emp_ids_set = set(empresa_ids) if empresa_ids else None
+                contrato_ids_emp = {c['id'] for c in contratos if emp_ids_set is None or c.get('empresa_id') in emp_ids_set}
+                emp_pagamentos = [p for p in pagamentos if p.get('contract_id') in contrato_ids_emp]
+                vencidos, vence_hoje, vence_amanha = processar_pagamentos(contratos, emp_pagamentos, hoje, empresa_nomes)
+                if not (vencidos or vence_hoje or vence_amanha):
+                    continue
+                rotulo = f" - {dest_nome}" if dest_nome else ""
+                partes = montar_html_pagamentos(vencidos, vence_hoje, vence_amanha, rotulo)
+                html_content = f"""<html><body style="font-family:Arial,sans-serif;padding:20px">
+                {''.join(partes)}
+                <p style="color:#666;font-size:12px">Gerado automaticamente em {datetime.now().strftime("%d/%m/%Y %H:%M")}</p></body></html>"""
+                try:
+                    enviar_email(cfg, html_content,
+                                 f'Lembrete de Pagamentos{rotulo} - {hoje.strftime("%d/%m/%Y")}',
+                                 email)
+                    enviados += 1
+                except Exception as e:
+                    erros.append(f"Pagamentos {email}: {e}")
+
+            # Alertas de contratos
+            for dest in destinatarios:
+                email = (dest.get('email') or '').strip()
+                if not email:
+                    continue
+                empresa_ids = dest.get('empresaIds') or dest.get('empresa_ids') or ''
+                if isinstance(empresa_ids, str):
+                    empresa_ids = [int(x.strip()) for x in empresa_ids.split(',') if x.strip().isdigit()]
+                dest_nome = dest.get('nome', '')
+                emp_ids_set = set(empresa_ids) if empresa_ids else None
+                emp_contratos = [c for c in contratos if emp_ids_set is None or c.get('empresa_id') in emp_ids_set]
+                emp_vencidos = processar_contratos_vencidos(emp_contratos, hoje)
+                emp_a_vencer = processar_contratos_a_vencer(emp_contratos, hoje)
+                if not emp_vencidos and not any(emp_a_vencer.values()):
+                    continue
+                rotulo = f" - {dest_nome}" if dest_nome else ""
+                regioes = []
+                regioes += montar_html_contratos_vencidos(emp_vencidos, rotulo)
+                regioes += montar_html_contratos_a_vencer(emp_a_vencer, rotulo)
+                emp_html = f"""<html><body style="font-family:Arial,sans-serif;padding:20px">
+                {'<hr style="margin:24px 0">'.join(regioes)}
+                <p style="color:#666;font-size:12px">Gerado automaticamente em {datetime.now().strftime("%d/%m/%Y %H:%M")}</p></body></html>"""
+                try:
+                    enviar_email(cfg, emp_html,
+                                 f'Alerta de Contratos{rotulo} - {hoje.strftime("%d/%m/%Y")}',
+                                 email)
+                    enviados += 1
+                except Exception as e:
+                    erros.append(f"Contratos {email}: {e}")
+
+            if enviados > 0:
+                print(f"[EMAIL AUTO] {enviados} e-mail(s) enviado(s) as {datetime.now().strftime('%H:%M')}")
+            else:
+                print(f"[EMAIL AUTO] Nenhum pendente para enviar as {datetime.now().strftime('%H:%M')}")
+            if erros:
+                print(f"[EMAIL AUTO] Erros: {'; '.join(erros)}")
+
+        except Exception as e:
+            print(f"[EMAIL AUTO] Erro geral: {e}")
+
+
+def _agendar_emails_diarios():
+    """Agenda envio de emails para todos os dias as 10h da manha."""
+    import time
+    while True:
+        agora = datetime.now()
+        proximo = agora.replace(hour=10, minute=0, second=0, microsecond=0)
+        if agora >= proximo:
+            proximo += timedelta(days=1)
+        espera = (proximo - agora).total_seconds()
+        print(f"[EMAIL AUTO] Proximo envio: {proximo.strftime('%d/%m/%Y %H:%M')} (em {int(espera/3600)}h{int((espera%3600)/60)}min)")
+        time.sleep(espera)
+        _enviar_emails_automaticos()
+
+
+def _iniciar_scheduler():
+    t = threading.Thread(target=_agendar_emails_diarios, daemon=True)
+    t.start()
+    print("[EMAIL AUTO] Scheduler de emails iniciado (todos os dias as 10h)")
+
 
 if __name__ == "__main__":
     debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
@@ -1474,6 +1709,7 @@ if __name__ == "__main__":
             init_db()
         print("=" * 50)
         print("Sistema iniciado com sucesso!")
+        _iniciar_scheduler()
         if https_enabled:
             cert_path, key_path = _ensure_ssl_cert()
             protocol = "https"
