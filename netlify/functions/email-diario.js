@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import nodemailer from 'nodemailer'
 
-export const schedule = '0 10 * * *' // Todos os dias as 10h UTC
+export const schedule = '0 13 * * *' // Todos os dias as 13h UTC = 10h BRL
 
 let _supabase = null
 function getSupabase() {
