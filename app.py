@@ -405,7 +405,7 @@ def validar_cpf_cnpj(valor):
         s1 = sum(int(nums[i]) * p1[i] for i in range(12))
         d1 = 11 - (s1 % 11)
         if d1 >= 10: d1 = 0
-        p2 = [6,5,3,2,9,8,7,6,5,4,3,2]
+        p2 = [6,5,4,3,2,9,8,7,6,5,4,3,2]
         s2 = sum(int(nums[i]) * p2[i] for i in range(13))
         d2 = 11 - (s2 % 11)
         if d2 >= 10: d2 = 0

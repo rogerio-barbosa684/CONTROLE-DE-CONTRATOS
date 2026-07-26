@@ -1,7 +1,0 @@
-﻿node.exe :  ┬╗   SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)
-No C:\Users\Rogerio Barbosa\AppData\Roaming\npm\netlify.ps1:24 caractere:5
-+     & "node$exe"  "$basedir/node_modules/netlify-cli/bin/run.js" $arg ...
-+     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: ( ┬╗   SyntaxErr...ine 1 column 2):String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 

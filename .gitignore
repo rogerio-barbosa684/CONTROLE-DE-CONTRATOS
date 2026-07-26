@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 *.pyo
 contratos.db
+contratos_backup.db
 database.db
 uploads/*
 !uploads/.gitkeep
@@ -35,4 +36,7 @@ flask_stdout.log
 erros.log
 erro.txt
 deploy-netlify.zip
+*.mjs
+*.cjs
+PUBLICADO_NETLIFY/
 

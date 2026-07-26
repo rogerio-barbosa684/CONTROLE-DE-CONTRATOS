@@ -229,8 +229,14 @@
       border-left: 4px solid #24527a;
       padding: 12px 16px;
       border-radius: 0 6px 6px 0;
-      font-size: 0.88rem;
-      margin-bottom: 16px;
+      margin: 8px 0;
+    }
+    .resumo-box {
+      background: #f9fcf6;
+      border-left: 4px solid #2e7d52;
+      padding: 12px 16px;
+      border-radius: 0 6px 6px 0;
+      margin: 12px 0;
     }
 
     .toast-overlay {
@@ -419,6 +425,7 @@
     [data-theme="dark"] .modal { background: #1e1e1e; }
     [data-theme="dark"] .modal h3 { color: #90caf9; border-bottom-color: #333; }
     [data-theme="dark"] .info-box { background: #1a2a3a; border-left-color: #90caf9; }
+    [data-theme="dark"] .resumo-box { background: #1a2e22; border-left-color: #66bb6a; }
     [data-theme="dark"] .config-subnav { border-bottom-color: #333; }
     [data-theme="dark"] .config-subnav button.active { color: #90caf9; }
     [data-theme="dark"] .config-subnav button:hover { color: #90caf9; }
@@ -1583,9 +1590,7 @@ function excluirEmpresa(id) {
   if (!confirm('Excluir esta empresa?')) return;
   const empresas = getEmpresas().filter(e => e.id !== id);
   saveEmpresas(empresas);
-  getCsrfToken().then(() => {
-    fetch('/api/companies/' + id, { method:'DELETE', headers:csrfHeaders() });
-  });
+  fetch('/api/companies/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
   limparFormEmpresa();
   renderEmpresasConfig();
   popularEmpresaSelect();
@@ -1601,7 +1606,7 @@ function inativarEmpresa(id) {
   e.active = e.active === 0 ? 1 : 0;
   saveEmpresas(empresas);
   getCsrfToken().then(() => {
-    fetch('/api/companies/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: e.active }) });
+    fetch('/api/companies/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: e.active }) }).catch(() => {});
   });
   renderEmpresasConfig();
   popularEmpresaSelect();
@@ -1731,7 +1736,7 @@ function syncToServer() {
     fetch('/api/sync', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
       body:JSON.stringify({ contratos: cachedContratos || [], pagamentos: cachedPagamentos || [], destinatarios: cachedDestinatarios || [] })
-    });
+    }).catch(() => {});
   });
 }
 
@@ -1749,9 +1754,10 @@ function mapServerContract(c) {
     } : null,
     responsavel: c.responsavel || '', setor: c.setor || '',
     obs: c.obs || '', tipo: c.tipo || '',
-    empresaId: c.empresa_id || null, arquivo: arquivo,
+    empresaId: c.empresa_id || null,     arquivo: arquivo,
     aditivos: [], criadoEm: c.created_at,
-    active: c.active !== undefined ? c.active : 1
+    active: c.active !== undefined ? c.active : 1,
+    resumo: c.resumo || null
   };
 }
 function mapServerPayment(p) {
@@ -1772,7 +1778,8 @@ function mapServerAdditive(a) {
   return {
     id: a.id, numero: a.numero, data: a.data_aditivo, tipo: a.tipo,
     novaData: a.nova_data_fim, novoValor: a.acrescimo_valor,
-    objeto: a.descricao, criadoEm: a.created_at, arquivo: arquivo
+    objeto: a.descricao, criadoEm: a.created_at, arquivo: arquivo,
+    resumo: a.resumo || null
   };
 }
 
@@ -2221,7 +2228,7 @@ function renderContratos() {
         <button class="btn btn-sm btn-warning" onclick="editarContrato('${c.id}')">Editar</button>
         <button class="btn btn-sm btn-warning" onclick="abrirAditivo('${c.id}')">Adit</button>
         <button class="btn btn-sm ${userInativo ? 'btn-secondary' : 'btn-warning'}" onclick="inativarContrato('${c.id}')">${userInativo ? 'Ativar' : 'Inat'}</button>
-        ${isAdmin ? `<button class="btn btn-sm btn-danger" onclick="excluirContrato('${c.id}')">Excluir</button>` : ''}
+        ${isAdmin ? `<button class="btn btn-sm btn-danger" onclick="excluirContrato('${c.id}')">Exc</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -2266,6 +2273,16 @@ function abrirDetalhe(id) {
     html += `<div class="info-box">Documento do Contrato: <button onclick="baixarAnexo('${c.id}')" style="background:transparent;border:none;color:#1a3c5e;cursor:pointer;font-weight:bold;">${escapeHtml(c.arquivo.name)}</button></div>`;
   }
 
+  html += `<div class="resumo-box" id="resumo-contract-${c.id}">`;
+  if (c.resumo) {
+    html += `<h4 style="margin:12px 0 4px;color:#1a3c5e;">Resumo do Contrato</h4>`;
+    html += `<p style="font-size:0.9rem;line-height:1.5;white-space:pre-wrap;">${escapeHtml(c.resumo)}</p>`;
+    html += `<button class="btn btn-sm btn-light" onclick="gerarResumo('contract','${c.id}')" style="margin-top:4px;">Regenerar</button>`;
+  } else {
+    html += `<button class="btn btn-sm btn-primary" onclick="gerarResumo('contract','${c.id}')" style="margin-top:8px;">📄 Gerar Resumo com IA</button>`;
+  }
+  html += `</div>`;
+
   if (c.aditivos?.length) {
     html += `<h4 style="margin:16px 0 8px;color:#1a3c5e;">Histórico de Aditivos</h4>`;
     html += c.aditivos.map(a => {
@@ -2303,7 +2320,34 @@ function abrirDetalhe(id) {
     btns.innerHTML += `<button class="btn btn-success" onclick="abrirLancarPgto('${id}')">+ Pgto</button>`;
   }
 
-  abrirModal('modal-detalhe');
+    abrirModal('modal-detalhe');
+}
+
+function gerarResumo(entity, id) {
+  const btn = document.querySelector(`#resumo-${entity}-${id} button`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
+  fetch('/api/resumo', { method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({entity, entity_id: id}) })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        const contratos = getContratos();
+        const c = contratos.find(x => x.id === id);
+        if (c) { c.resumo = d.resumo; saveContratos(contratos); }
+        const container = document.getElementById(`resumo-${entity}-${id}`);
+        if (container) {
+          container.innerHTML = `<h4 style="margin:12px 0 4px;color:#1a3c5e;">Resumo do Contrato</h4>
+            <p style="font-size:0.9rem;line-height:1.5;white-space:pre-wrap;">${escapeHtml(d.resumo)}</p>
+            <button class="btn btn-sm btn-light" onclick="gerarResumo('${entity}','${id}')" style="margin-top:4px;">Regenerar</button>`;
+        }
+        mostrarToast('Resumo gerado com sucesso!', 'sucesso');
+      } else {
+        mostrarToast(d.erro || 'Erro ao gerar resumo', 'erro');
+        if (btn) { btn.disabled = false; btn.textContent = '📄 Gerar Resumo com IA'; }
+      }
+    }).catch(() => {
+      mostrarToast('Servidor offline', 'erro');
+      if (btn) { btn.disabled = false; btn.textContent = '📄 Gerar Resumo com IA'; }
+    });
 }
 
 function editarContrato(id) {
@@ -2349,14 +2393,12 @@ function editarContrato(id) {
 
 function excluirContrato(id) {
   if (!confirm('Excluir este contrato e todos os seus pagamentos?')) return;
-  getCsrfToken().then(() => {
-    fetch('/api/contracts/' + id, { method:'DELETE', headers:csrfHeaders() });
-    saveContratos(getContratos().filter(c => c.id !== id));
-    savePagamentos(getPagamentos().filter(p => p.contratoId !== id));
-    syncToServer();
-    renderContratos();
-    renderDashboard();
-  });
+  fetch('/api/contracts/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
+  saveContratos(getContratos().filter(c => c.id !== id));
+  savePagamentos(getPagamentos().filter(p => p.contratoId !== id));
+  syncToServer();
+  renderContratos();
+  renderDashboard();
 }
 
 function inativarContrato(id) {
@@ -2366,10 +2408,12 @@ function inativarContrato(id) {
   c.active = c.active === 0 ? 1 : 0;
   saveContratos(contratos);
   getCsrfToken().then(() => {
-    fetch('/api/contracts/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: c.active }) });
+    fetch('/api/contracts/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: c.active }) }).catch(() => {});
   });
   syncToServer();
   renderContratos();
+  renderDashboard();
+  mostrarToast(`Contrato ${c.active ? 'ativado' : 'inativado'} com sucesso.`, 'sucesso');
 }
 
 // ===================== ADITIVO =====================
@@ -2660,9 +2704,7 @@ async function confirmarBaixa() {
 
 function excluirPgto(id) {
   if (!confirm('Excluir este pagamento?')) return;
-  getCsrfToken().then(() => {
-    fetch('/api/payments/' + id, { method:'DELETE', headers:csrfHeaders() });
-  });
+  fetch('/api/payments/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
   savePagamentos(getPagamentos().filter(p=>p.id!==id));
   syncToServer();
   renderPagamentos();
@@ -2896,17 +2938,8 @@ function salvarUsuario() {
   });
 }
 
-function toggleAtivoUsuario(id, ativo) {
-  if (!confirm(`Tem certeza que deseja ${ativo ? 'ativar' : 'inativar'} este usuário?`)) return;
-  fetch('/api/users/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({active: ativo}) })
-    .then(r => r.json()).then(d => {
-      if(d.ok) renderUsuarios();
-      else alert(d.erro || 'Erro');
-    }).catch(() => alert('Servidor offline'));
-}
-
 function excluirUsuario(id) {
-  if (!confirm('Excluir permanentemente este usuário? Todos os dados dele serão removidos.')) return;
+  if (!confirm('Inativar este usuário? Ele não poderá mais fazer login.')) return;
   fetch('/api/users/' + id, { method:'DELETE', headers:csrfHeaders() })
     .then(r => { try { return r.json(); } catch(e) { throw new Error('Resposta invalida do servidor (status ' + r.status + ')'); } })
     .then(d => {
@@ -2927,8 +2960,6 @@ function renderUsuarios() {
         tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">' + (users.erro || 'Servidor offline') + '</td></tr>'; return;
       }
       if (!Array.isArray(users)) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">Servidor offline</td></tr>'; return; }
-      const _u = JSON.parse(sessionStorage.getItem('user') || '{}');
-      const isAdminUsr = _u.role === 'admin';
       tb.innerHTML = users.map(u => {
         const ue = getUserEmpresas(u.id);
         const empNomes = u.role === 'admin' ? '<span style="color:#2e7d52;font-weight:500;">Todas</span>' : (ue ? ue.empresaIds.map(eid => {
@@ -2936,20 +2967,19 @@ function renderUsuarios() {
           return e ? e.nome : null;
         }).filter(Boolean).join(', ') : '—');
         return `<tr>
-        <td>${escapeHtml(String(u.id))}</td><td>${escapeHtml(u.username)}</td><td>${escapeHtml(u.full_name)}</td><td>${escapeHtml(u.email || '')}</td>
+        <td>${escapeHtml(String(u.id))}</td><td>${escapeHtml(u.username)}</td><td>${escapeHtml(u.full_name)}</td><td>${escapeHtml(u.email || '—')}</td>
         <td>${u.role === 'admin' ? 'Admin' : 'Usuário'}</td>
         <td style="font-size:0.8rem;max-width:200px;white-space:normal;">${empNomes}</td>
         <td>${u.active ? '<span class="badge badge-ativo">Sim</span>' : '<span class="badge badge-vencido">Não</span>'}</td>
         <td>${u.created_at || '-'}</td>
-        <td style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+        <td style="display:flex;gap:4px;">
           <button class="btn btn-sm btn-primary" onclick='abrirModalUsuario(${JSON.stringify(u).replace(/'/g,"&#39;")})'>Editar</button>
-          ${u.id === 1 ? '' : `<button class="btn btn-sm ${u.active ? 'btn-warning' : 'btn-secondary'}" onclick="toggleAtivoUsuario(${escapeHtml(String(u.id))}, ${u.active ? 0 : 1})">${u.active ? 'Inat' : 'Ativar'}</button>`}
-          ${isAdminUsr && u.id !== 1 ? `<button class="btn btn-sm btn-danger" onclick="excluirUsuario(${escapeHtml(String(u.id))})">Exc</button>` : ''}
+          ${u.id === 1 ? '<span style="color:#aaa;font-size:0.78rem;">—</span>' : `<button class="btn btn-sm btn-danger" onclick="excluirUsuario(${escapeHtml(String(u.id))})">Inat</button>`}
         </td>
       </tr>`;
       }).join('');
     }).catch(e => {
-      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#aaa;padding:32px">Servidor offline: ' + (e.message || 'conexao falhou') + '</td></tr>';
+      tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">Servidor offline: ' + (e.message || 'conexao falhou') + '</td></tr>';
     });
 }
 
