@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken'
 import nodemailer from 'nodemailer'
 import crypto from 'crypto'
 
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex')
+const JWT_SECRET = process.env.JWT_SECRET || 'contratos_jwt_secret_2026_ideal_alimentacao'
 
 const forgotPasswordAttempts = new Map()
 function checkForgotPasswordRateLimit(ip) {
@@ -23,8 +23,8 @@ function checkForgotPasswordRateLimit(ip) {
 let _supabase = null
 function getSupabase() {
   if (_supabase) return _supabase
-  const url = process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const url = process.env.SUPABASE_URL || 'https://pgehubucomamrmdgpvhn.supabase.co'
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || 'sb_secret_HRHEyYIEUW0BK7-ZOAS9rA_OQiyyfLm'
   _supabase = createClient(url, key)
   return _supabase
 }
