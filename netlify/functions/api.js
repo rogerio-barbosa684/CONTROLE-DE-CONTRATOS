@@ -111,28 +111,57 @@ function hashPassword(password) {
 
 function checkPassword(password, hash) {
   return new Promise((resolve, reject) => {
-    if (!hash || !hash.includes('$')) return resolve(false)
-    const parts = hash.split('$')
-    if (parts.length < 3) return resolve(false)
+    if (!hash) return resolve(false)
+
+    // Formato werkzeug: pbkdf2:sha256:600000$<base64salt>$<base64hash>
+    if (hash.startsWith('pbkdf2:')) {
+      try {
+        const parts = hash.split('$')
+        if (parts.length < 3) return resolve(false)
+        const salt = Buffer.from(parts[1], 'base64')
+        const storedHash = Buffer.from(parts[2], 'base64')
+        const iterations = parseInt(hash.split(':')[2]) || 600000
+        crypto.pbkdf2(password, salt, iterations, storedHash.length, 'sha256', (err, key) => {
+          if (err) reject(err)
+          else resolve(key.equals(storedHash))
+        })
+      } catch { resolve(false) }
+      return
+    }
+
+    // Formato werkzeug: scrypt:32768:8:1$<base64salt>$<base64hash>
     if (hash.startsWith('scrypt:')) {
-      const params = parts[0].split(':')
-      const N = parseInt(params[1]) || 32768
-      const r = parseInt(params[2]) || 8
-      const p = parseInt(params[3]) || 1
-      const salt = parts[1]
-      const storedHash = parts[2]
-      crypto.scrypt(password, salt, 64, { N, r, p }, (err, key) => {
-        if (err) reject(err)
-        else resolve(key.toString('hex') === storedHash)
-      })
-    } else {
+      try {
+        const parts = hash.split('$')
+        if (parts.length < 3) return resolve(false)
+        const params = parts[0].split(':')
+        const N = parseInt(params[1]) || 32768
+        const r = parseInt(params[2]) || 8
+        const p = parseInt(params[3]) || 1
+        const salt = Buffer.from(parts[1], 'base64')
+        const storedHash = Buffer.from(parts[2], 'base64')
+        crypto.scrypt(password, salt, storedHash.length, { N, r, p }, (err, key) => {
+          if (err) reject(err)
+          else resolve(key.equals(storedHash))
+        })
+      } catch { resolve(false) }
+      return
+    }
+
+    // Formato api.js: pbkdf2_sha256$<hexsalt>$<hexhash>
+    if (hash.includes('$')) {
+      const parts = hash.split('$')
+      if (parts.length < 3) return resolve(false)
       const salt = parts[1]
       const storedHash = parts[2]
       crypto.pbkdf2(password, salt, 310000, 32, 'sha256', (err, key) => {
         if (err) reject(err)
         else resolve(key.toString('hex') === storedHash)
       })
+      return
     }
+
+    resolve(false)
   })
 }
 
