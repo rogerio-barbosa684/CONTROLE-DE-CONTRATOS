@@ -79,8 +79,15 @@ function validateCsrf(cookieHeader, bodyCsrf) {
 }
 
 function requireAdmin(user) {
-  if (!user || user.role !== 'admin') {
+  if (!user || (user.role !== 'admin' && user.role !== 'setor_admin')) {
     return json({ ok: false, erro: 'Acesso restrito ao administrador' }, 403)
+  }
+  return null
+}
+
+function requireGlobalAdmin(user) {
+  if (!user || user.role !== 'admin') {
+    return json({ ok: false, erro: 'Acesso restrito ao administrador global' }, 403)
   }
   return null
 }
@@ -564,7 +571,7 @@ export async function handler(event) {
     if (parts[0] === 'companies' && parts[1] && httpMethod === 'DELETE') {
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      const adminErr = requireAdmin(user)
+      const adminErr = requireGlobalAdmin(user)
       if (adminErr) return adminErr
       if (!validateCsrf(cookieHeader, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
@@ -577,7 +584,7 @@ export async function handler(event) {
     if (parts[0] === 'contracts' && parts[1] && httpMethod === 'DELETE') {
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      const adminErr = requireAdmin(user)
+      const adminErr = requireGlobalAdmin(user)
       if (adminErr) return adminErr
       if (!validateCsrf(cookieHeader, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
@@ -593,7 +600,7 @@ export async function handler(event) {
     if (parts[0] === 'payments' && parts[1] && httpMethod === 'DELETE') {
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      const adminErr = requireAdmin(user)
+      const adminErr = requireGlobalAdmin(user)
       if (adminErr) return adminErr
       if (!validateCsrf(cookieHeader, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)

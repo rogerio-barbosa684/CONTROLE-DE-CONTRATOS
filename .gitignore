@@ -13,14 +13,12 @@ dist/
 build/
 .secret_key
 config_email.json
-script16/.env
-script16/config_email.json
 dados.json
 cert.pem
 key.pem
 node_modules/
 .netlify/
-# script*/
+script*/
 cookies.txt
 env_vars.json
 site_id.json

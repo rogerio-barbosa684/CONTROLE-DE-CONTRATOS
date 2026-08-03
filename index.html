@@ -98,6 +98,38 @@
     }
     textarea { resize: vertical; min-height: 70px; }
 
+    /* Password toggle wrapper */
+    .password-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .password-wrapper input {
+      flex: 1;
+      padding-right: 44px;
+    }
+    .btn-toggle-password {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-size: 1.1rem;
+      color: #888;
+      padding: 4px;
+      line-height: 1;
+      transition: color 0.2s;
+    }
+    .btn-toggle-password:hover {
+      color: #24527a;
+    }
+    .btn-toggle-password:focus {
+      outline: none;
+      color: #24527a;
+    }
+
     .toggle-row {
       display: flex;
       align-items: center;
@@ -406,6 +438,44 @@
     .empresa-check-list label:hover { background: #eef2f7; }
     .empresa-check-list input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
 
+    /* ─── TAGS DROPDOWN ──────────────────────────────────── */
+    .tags-dropdown-wrap { position: relative; margin-top: 4px; }
+    .tags-dropdown-trigger { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 38px; padding: 5px 10px; border: 1.5px solid #d0d7de; border-radius: 6px; background: #fff; cursor: pointer; transition: border-color 0.2s; }
+    .tags-dropdown-trigger:hover { border-color: #90caf9; }
+    .tags-dropdown-trigger.open { border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,0.15); }
+    .tags-dropdown-trigger .placeholder { color: #999; font-size: 0.85rem; }
+    .tags-dropdown-trigger .arrow { margin-left: auto; font-size: 0.7rem; color: #888; transition: transform 0.2s; }
+    .tags-dropdown-trigger.open .arrow { transform: rotate(180deg); }
+    .tag-item { display: inline-flex; align-items: center; gap: 4px; background: #e3f2fd; color: #1565c0; padding: 3px 8px; border-radius: 12px; font-size: 0.78rem; font-weight: 500; white-space: nowrap; }
+    .tag-item .tag-remove { cursor: pointer; font-size: 0.9rem; line-height: 1; color: #1565c0; opacity: 0.6; transition: opacity 0.15s; }
+    .tag-item .tag-remove:hover { opacity: 1; }
+    .tags-dropdown-panel { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border: 1.5px solid #d0d7de; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 1000; max-height: 280px; overflow: hidden; }
+    .tags-dropdown-panel.open { display: block; }
+    .tags-dropdown-search { padding: 8px 10px; border-bottom: 1px solid #eee; }
+    .tags-dropdown-search input { width: 100%; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.84rem; outline: none; }
+    .tags-dropdown-search input:focus { border-color: #1a73e8; }
+    .tags-dropdown-actions { display: flex; gap: 8px; padding: 6px 10px; border-bottom: 1px solid #eee; }
+    .tags-dropdown-actions button { background: none; border: none; color: #1a73e8; font-size: 0.78rem; cursor: pointer; padding: 2px 4px; }
+    .tags-dropdown-actions button:hover { text-decoration: underline; }
+    .tags-dropdown-list { max-height: 180px; overflow-y: auto; padding: 4px 0; }
+    .tags-dropdown-item { display: flex; align-items: center; gap: 8px; padding: 7px 12px; font-size: 0.85rem; cursor: pointer; transition: background 0.12s; }
+    .tags-dropdown-item:hover { background: #f0f4f8; }
+    .tags-dropdown-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #1a73e8; }
+    .tags-dropdown-item.checked { background: #e8f0fe; }
+    .tags-dropdown-empty { color: #aaa; font-size: 0.82rem; text-align: center; padding: 16px; }
+    .tags-dropdown-admin-msg { color: #2e7d52; font-size: 0.88rem; font-weight: 500; padding: 8px 0; }
+    [data-theme="dark"] .tags-dropdown-trigger { background: #2a2a2a; border-color: #555; color: #e0e0e0; }
+    [data-theme="dark"] .tags-dropdown-trigger:hover { border-color: #90caf9; }
+    [data-theme="dark"] .tag-item { background: #1a3a5a; color: #90caf9; }
+    [data-theme="dark"] .tag-item .tag-remove { color: #90caf9; }
+    [data-theme="dark"] .tags-dropdown-panel { background: #2a2a2a; border-color: #555; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+    [data-theme="dark"] .tags-dropdown-search { border-bottom-color: #444; }
+    [data-theme="dark"] .tags-dropdown-search input { background: #333; border-color: #555; color: #e0e0e0; }
+    [data-theme="dark"] .tags-dropdown-actions { border-bottom-color: #444; }
+    [data-theme="dark"] .tags-dropdown-actions button { color: #90caf9; }
+    [data-theme="dark"] .tags-dropdown-item:hover { background: #333; }
+    [data-theme="dark"] .tags-dropdown-item.checked { background: #1a3a5a; }
+
     /* ─── DARK MODE ──────────────────────────────────────── */
     [data-theme="dark"] body { background: #121212; color: #e0e0e0; }
     [data-theme="dark"] .card { background: #1e1e1e; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
@@ -681,11 +751,14 @@
     <div id="login-error" style="color:#c0392b; font-weight:bold; font-size:0.9rem; margin-bottom:16px; display:none;">Usuário ou senha incorretos!</div>
     <div class="form-group" style="text-align:left;">
       <label>Usuário</label>
-      <input type="text" id="log-user" />
+      <input type="text" id="log-user" onkeydown="if(event.key==='Enter')doLogin()"/>
     </div>
     <div class="form-group" style="text-align:left; margin-top:12px;">
       <label>Senha</label>
-      <input type="password" id="log-pass" />
+      <div class="password-wrapper">
+        <input type="password" id="log-pass" onkeydown="if(event.key==='Enter')doLogin()"/>
+        <button type="button" class="btn-toggle-password" onclick="togglePassword('log-pass', this)" aria-label="Mostrar/ocultar senha" title="Mostrar/ocultar senha">👁</button>
+      </div>
     </div>
     <button class="btn btn-primary" style="width:100%; margin-top:20px;" onclick="doLogin()">Entrar no Sistema</button>
     <div style="margin-top:14px;font-size:0.85rem;"><a href="#" onclick="mostrarForgotPassword();return false;" style="color:#1a3c5e;">Esqueci a senha</a></div>
@@ -698,11 +771,17 @@
     <div id="rp-msg" style="color:#2e7d52;font-weight:bold;font-size:0.9rem;margin-bottom:16px;display:none;"></div>
     <div class="form-group" style="text-align:left;">
       <label>Nova Senha</label>
-      <input type="password" id="rp-senha" placeholder="Mínimo 6 caracteres" />
+      <div class="password-wrapper">
+        <input type="password" id="rp-senha" placeholder="Mínimo 6 caracteres" />
+        <button type="button" class="btn-toggle-password" onclick="togglePassword('rp-senha', this)" aria-label="Mostrar/ocultar senha" title="Mostrar/ocultar senha">👁</button>
+      </div>
     </div>
     <div class="form-group" style="text-align:left;margin-top:12px;">
       <label>Confirmar Senha</label>
-      <input type="password" id="rp-confirmar" placeholder="Repita a senha" />
+      <div class="password-wrapper">
+        <input type="password" id="rp-confirmar" placeholder="Repita a senha" />
+        <button type="button" class="btn-toggle-password" onclick="togglePassword('rp-confirmar', this)" aria-label="Mostrar/ocultar senha" title="Mostrar/ocultar senha">👁</button>
+      </div>
     </div>
     <button class="btn btn-primary" style="width:100%;margin-top:20px;" onclick="doResetPassword()">Redefinir Senha</button>
     <div style="margin-top:14px;font-size:0.85rem;"><a href="#" onclick="mostrarLogin();return false;" style="color:#1a3c5e;">Voltar ao login</a></div>
@@ -721,6 +800,14 @@
   </svg>
   <h1>Controle de Contratos e Pagamentos</h1>
   <span id="header-user" style="margin-left:auto; color:#cde; font-size:0.85rem;"></span>
+  <div id="notif-bell" style="position:relative;cursor:pointer;margin-left:12px;" onclick="toggleNotificacoes()" title="Notificações">
+    <span style="font-size:1.3rem;">&#128276;</span>
+    <span id="notif-badge" style="display:none;position:absolute;top:-6px;right:-8px;background:#e74c3c;color:#fff;border-radius:50%;min-width:18px;height:18px;font-size:0.7rem;font-weight:bold;text-align:center;line-height:18px;padding:0 4px;"></span>
+  </div>
+  <div id="notif-panel" style="display:none;position:absolute;top:50px;right:10px;background:#fff;border:1px solid #ddd;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.15);width:340px;max-height:400px;overflow-y:auto;z-index:9999;padding:0;">
+    <div style="padding:12px 16px;border-bottom:1px solid #eee;font-weight:bold;font-size:0.9rem;color:#1a3c5e;">Notificações</div>
+    <div id="notif-list" style="padding:8px 0;"></div>
+  </div>
   <button id="toggle-tema" onclick="toggleTema()" title="Alternar tema claro/escuro">🌙</button>
   <button style="background:transparent; border:none; color:#cde; cursor:pointer; font-weight:bold; font-size:0.9rem;" onclick="doLogout()">Sair</button>
 </header>
@@ -733,6 +820,7 @@
   <div class="nav-dropdown">
     <button class="dropdown-btn" onclick="toggleConfigDropdown(event)">Configuração ▾</button>
     <div class="dropdown-content" id="config-dropdown">
+      <a onclick="showConfigSub('minha-conta')">Minha Conta</a>
       <a id="drop-usuarios" onclick="showConfigSub('usuarios')">Usuários</a>
       <a onclick="showConfigSub('empresas')">Empresas</a>
       <a onclick="showConfigSub('tipos')">Tipos de Serviço</a>
@@ -776,7 +864,41 @@
   <!-- LISTA DE CONTRATOS -->
   <div id="page-contratos" class="page">
     <div class="card">
-      <h2>Contratos Cadastrados</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <h2>Contratos Cadastrados</h2>
+        <button class="btn btn-primary" onclick="exportarContratosExcel()" style="font-size:0.85rem;">Exportar Excel</button>
+      </div>
+      <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; align-items:flex-end;">
+        <div class="form-group" style="min-width:220px;">
+          <label>Filtrar por Fornecedor / CNPJ / CPF</label>
+          <input type="text" id="filtro-ct-parte" placeholder="Nome ou documento" oninput="renderContratos()"/>
+        </div>
+        <div class="form-group" style="min-width:160px;">
+          <label>Filtrar por Status</label>
+          <select id="filtro-ct-status" onchange="renderContratos()">
+            <option value="">Todos</option>
+            <option value="ativo">Ativo</option>
+            <option value="vencido">Vencido</option>
+            <option value="inativo">Inativo</option>
+          </select>
+        </div>
+        <div class="form-group" style="min-width:160px;">
+          <label>Vigência Início (de)</label>
+          <input type="date" id="filtro-ct-inicio" onchange="renderContratos()"/>
+        </div>
+        <div class="form-group" style="min-width:160px;">
+          <label>Vigência Fim (até)</label>
+          <input type="date" id="filtro-ct-fim" onchange="renderContratos()"/>
+        </div>
+        <div class="form-group" style="min-width:160px;">
+          <label>Valor Mínimo (R$)</label>
+          <input type="number" id="filtro-ct-valor-min" placeholder="0,00" step="0.01" oninput="renderContratos()"/>
+        </div>
+        <div class="form-group" style="min-width:160px;">
+          <label>Valor Máximo (R$)</label>
+          <input type="number" id="filtro-ct-valor-max" placeholder="0,00" step="0.01" oninput="renderContratos()"/>
+        </div>
+      </div>
       <div style="overflow-x:auto">
         <table>
           <thead>
@@ -788,6 +910,7 @@
           <tbody id="tb-contratos"></tbody>
         </table>
       </div>
+      <div id="ct-pagination"></div>
     </div>
   </div>
 
@@ -845,7 +968,9 @@
         </div>
         <div class="form-group">
           <label>Setor</label>
-          <input type="text" id="f-setor" placeholder="Departamento"/>
+          <select id="f-setor">
+            <option value="">Selecione o setor...</option>
+          </select>
         </div>
         <div class="form-group full">
           <label>Observações</label>
@@ -908,7 +1033,10 @@
   <!-- PAGAMENTOS -->
   <div id="page-pagamentos" class="page">
     <div class="card">
-      <h2>Pagamentos / Parcelas</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <h2>Pagamentos / Parcelas</h2>
+        <button class="btn btn-primary" onclick="exportarPagamentosExcel()" style="font-size:0.85rem;">Exportar Excel</button>
+      </div>
       <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; align-items:flex-end;">
         <div class="form-group" style="min-width:220px;">
           <label>Filtrar por Contrato</label>
@@ -925,11 +1053,35 @@
             <option value="atrasado">Atrasado</option>
           </select>
         </div>
+        <div class="form-group" style="min-width:160px;">
+          <label>Vencimento (de)</label>
+          <input type="date" id="filtro-pg-inicio" onchange="renderPagamentos()"/>
+        </div>
+        <div class="form-group" style="min-width:160px;">
+          <label>Vencimento (até)</label>
+          <input type="date" id="filtro-pg-fim" onchange="renderPagamentos()"/>
+        </div>
+        <div class="form-group" style="min-width:140px;">
+          <label>Valor Mínimo</label>
+          <input type="number" id="filtro-pg-valor-min" placeholder="0,00" step="0.01" oninput="renderPagamentos()"/>
+        </div>
+        <div class="form-group" style="min-width:140px;">
+          <label>Valor Máximo</label>
+          <input type="number" id="filtro-pg-valor-max" placeholder="0,00" step="0.01" oninput="renderPagamentos()"/>
+        </div>
+      </div>
+      <div id="batch-bar" style="display:none;background:#eaf2f8;padding:10px 16px;border-radius:6px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span id="batch-count" style="font-size:0.85rem;font-weight:bold;color:#1a3c5e;"></span>
+        <button class="btn btn-sm btn-success" onclick="baixarSelecionados()">Baixar Selecionados</button>
+        <button class="btn btn-sm" style="background:#d4820a;color:white;" onclick="estornarSelecionados()">Estornar Selecionados</button>
+        <button class="btn btn-sm btn-danger" onclick="excluirSelecionados()">Excluir Selecionados</button>
+        <button class="btn btn-sm" style="background:#eee;" onclick="limparSelecao()">Limpar Seleção</button>
       </div>
       <div style="overflow-x:auto">
         <table>
           <thead>
             <tr>
+              <th style="width:36px;"><input type="checkbox" id="pg-select-all" onchange="toggleSelectAllPg(this)"/></th>
               <th>Contrato</th><th>Descrição</th><th>Empresa</th><th>Vencimento</th>
               <th>Valor</th><th>Pagamento</th><th>Anexo</th><th>Status</th><th>Ações</th>
             </tr>
@@ -937,6 +1089,7 @@
           <tbody id="tb-pagamentos"></tbody>
         </table>
       </div>
+      <div id="pg-pagination"></div>
     </div>
   </div>
 
@@ -944,12 +1097,48 @@
   <div id="page-configuracao" class="page">
     <div class="card" style="padding-bottom:0;">
       <div class="config-subnav">
+        <button id="subnav-minha-conta" onclick="showConfigSub('minha-conta')">Minha Conta</button>
         <button id="subnav-usuarios" class="active" onclick="showConfigSub('usuarios')">Usuários</button>
         <button onclick="showConfigSub('empresas')">Empresas</button>
+        <button onclick="showConfigSub('setores')">Setores</button>
         <button onclick="showConfigSub('tipos')">Tipos de Serviço</button>
         <button onclick="showConfigSub('destinatarios')">Destinatários</button>
         <button onclick="showConfigSub('email')">E-mail</button>
+        <button onclick="showConfigSub('historico')">Histórico</button>
         <button onclick="showConfigSub('sistema')">Sistema</button>
+      </div>
+    </div>
+
+    <!-- MINHA CONTA -->
+    <div id="config-sub-minha-conta" class="config-section">
+      <div class="card">
+        <h2>Minha Conta</h2>
+        <p style="margin-bottom:16px;color:#666;font-size:0.9rem;">Alterar sua senha de acesso.</p>
+        <div class="form-grid" style="max-width:500px;">
+          <div class="form-group">
+            <label>Senha Atual *</label>
+            <div class="password-wrapper">
+              <input type="password" id="mc-senha-atual" placeholder="Informe sua senha atual"/>
+              <button type="button" class="btn-toggle-password" onclick="togglePassword('mc-senha-atual', this)" aria-label="Mostrar/ocultar senha" title="Mostrar/ocultar senha">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Nova Senha *</label>
+            <div class="password-wrapper">
+              <input type="password" id="mc-nova-senha" placeholder="Min. 8 caracteres, 1 maiúscula, 1 minúscula, 1 número"/>
+              <button type="button" class="btn-toggle-password" onclick="togglePassword('mc-nova-senha', this)" aria-label="Mostrar/ocultar senha" title="Mostrar/ocultar senha">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Confirmar Nova Senha *</label>
+            <div class="password-wrapper">
+              <input type="password" id="mc-confirmar-senha" placeholder="Repita a nova senha"/>
+              <button type="button" class="btn-toggle-password" onclick="togglePassword('mc-confirmar-senha', this)" aria-label="Mostrar/ocultar senha" title="Mostrar/ocultar senha">👁</button>
+            </div>
+          </div>
+        </div>
+        <div id="mc-msg" style="display:none;margin-top:12px;font-size:0.9rem;padding:8px 12px;border-radius:6px;"></div>
+        <button class="btn btn-primary" style="margin-top:16px;" onclick="alterarMinhaSenha()">Alterar Senha</button>
       </div>
     </div>
 
@@ -964,7 +1153,7 @@
           <table>
             <thead>
               <tr>
-                <th>ID</th><th>Usuário</th><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Empresas</th><th>Ativo</th><th>Criado em</th><th>Ações</th>
+                <th>ID</th><th>Usuário</th><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Empresas</th><th>Setores</th><th>Ativo</th><th>Criado em</th><th>Ações</th>
               </tr>
             </thead>
             <tbody id="tb-usuarios"></tbody>
@@ -995,6 +1184,29 @@
               <tr><th>#</th><th>Empresa</th><th>CNPJ</th><th>Ações</th></tr>
             </thead>
             <tbody id="tb-empresas"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETORES -->
+    <div id="config-sub-setores" class="config-section">
+      <div class="card">
+        <h2>Setores</h2>
+        <p style="margin-bottom:16px;color:#666;font-size:0.9rem;">Cadastre os setores que serão vinculados aos contratos e aos usuários.</p>
+        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:end;flex-wrap:wrap;">
+          <div class="form-group" style="flex:1;min-width:180px;">
+            <label>Nome do Setor</label>
+            <input type="text" id="novo-setor-nome" placeholder="Ex: Financeiro" onkeydown="if(event.key==='Enter')salvarSetor()"/>
+          </div>
+          <button class="btn btn-primary" id="btn-salvar-setor" onclick="salvarSetor()" style="margin-bottom:1px;">Adicionar</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr><th>#</th><th>Setor</th><th>Ações</th></tr>
+            </thead>
+            <tbody id="tb-setores"></tbody>
           </table>
         </div>
       </div>
@@ -1075,7 +1287,10 @@
           </div>
           <div class="form-group">
             <label>Senha do E-mail</label>
-            <input type="password" id="cfg-senha" placeholder="senha ou app password"/>
+            <div class="password-wrapper">
+              <input type="password" id="cfg-senha" placeholder="senha ou app password"/>
+              <button type="button" class="btn-toggle-password" onclick="togglePassword('cfg-senha', this)" aria-label="Mostrar/ocultar senha" title="Mostrar/ocultar senha">👁</button>
+            </div>
           </div>
           <div class="form-group">
             <label>E-mail Destinatário (master)</label>
@@ -1088,6 +1303,20 @@
           <button class="btn btn-warning" onclick="enviarAlertasContratos()" style="background:#c0392b;">Enviar Alertas de Contratos</button>
         </div>
         <div id="cfg-msg" style="margin-top:12px;display:none;" class="info-box"></div>
+      </div>
+    </div>
+
+    <!-- HISTORICO -->
+    <div id="config-sub-historico" class="config-section">
+      <div class="card">
+        <h2>Histórico de Ações</h2>
+        <p style="margin-bottom:16px;color:#666;font-size:0.9rem;">Últimas ações realizadas no sistema.</p>
+        <div style="margin-bottom:12px;">
+          <button class="btn btn-sm btn-primary" onclick="carregarHistorico()">Atualizar</button>
+        </div>
+        <div id="historico-content" style="overflow-x:auto;">
+          <p style="color:#aaa;">Clique em "Atualizar" para carregar.</p>
+        </div>
       </div>
     </div>
 
@@ -1124,18 +1353,26 @@
       </div>
       <div class="form-group">
         <label>Senha *</label>
-        <input type="password" id="mu-senha" placeholder="Mínimo 6 caracteres"/>
+        <div class="password-wrapper">
+          <input type="password" id="mu-senha" placeholder="Mínimo 6 caracteres"/>
+          <button type="button" class="btn-toggle-password" onclick="togglePassword('mu-senha', this)" aria-label="Mostrar/ocultar senha" title="Mostrar/ocultar senha">👁</button>
+        </div>
       </div>
       <div class="form-group">
         <label>Perfil</label>
-        <select id="mu-perfil" onchange="popularEmpresaCheckboxes()">
+        <select id="mu-perfil" onchange="popularEmpresaCheckboxes();popularSetorCheckboxes()">
           <option value="user">Usuário</option>
+          <option value="setor_admin">Administrador de Setor</option>
           <option value="admin">Administrador</option>
         </select>
       </div>
       <div class="form-group full">
         <label>Empresas com Acesso</label>
-        <div id="mu-empresas" class="empresa-check-list"></div>
+        <div id="mu-empresas-dual"></div>
+      </div>
+      <div class="form-group full">
+        <label>Setores com Acesso</label>
+        <div id="mu-setores-dual"></div>
       </div>
     </div>
     <div class="btn-row">
@@ -1310,6 +1547,23 @@
   </div>
 </div>
 
+<!-- MODAL: PREVIEW PDF -->
+<div class="modal-overlay" id="modal-pdf-preview">
+  <div class="modal" style="max-width:480px;text-align:center;padding:32px 24px;">
+    <button class="modal-close" onclick="fecharModal('modal-pdf-preview')">×</button>
+    <div style="margin-bottom:20px;">
+      <div style="font-size:3rem;margin-bottom:12px;">📄</div>
+      <h3 style="margin:0 0 4px;color:#1a3c5e;" id="pdf-preview-title">Arquivo PDF</h3>
+      <p style="color:#888;font-size:0.85rem;margin:0;">Selecione uma opcao abaixo:</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <button class="btn btn-primary" onclick="abrirPdfNovaAba()" style="width:100%;padding:12px;">Abrir PDF em nova aba</button>
+      <button class="btn btn-success" onclick="baixarPdfPreview()" style="width:100%;padding:12px;">Baixar arquivo</button>
+      <button class="btn" style="width:100%;padding:12px;background:#eee;color:#333;" onclick="imprimirPdfPreview()">Imprimir</button>
+    </div>
+  </div>
+</div>
+
 <!-- ASSISTENTE VIRTUAL -->
 <button id="assistente-btn" onclick="toggleChat()" title="Assistente Virtual">?</button>
 
@@ -1329,9 +1583,12 @@
     <div class="chat-suggestions" id="chat-suggestions">
       <button class="chat-sug-btn" onclick="enviarPergunta('Como cadastrar um contrato?')">Cadastrar contrato</button>
       <button class="chat-sug-btn" onclick="enviarPergunta('Como registrar um pagamento?')">Registrar pagamento</button>
-      <button class="chat-sug-btn" onclick="enviarPergunta('Como adicionar um aditivo?')">Aditivo</button>
-      <button class="chat-sug-btn" onclick="enviarPergunta('Como configurar o e-mail?')">Configurar e-mail</button>
-      <button class="chat-sug-btn" onclick="enviarPergunta('Como gerenciar usuarios?')">Gerenciar usuarios</button>
+      <button class="chat-sug-btn" onclick="enviarPergunta('Como filtrar contratos e pagamentos?')">Filtros</button>
+      <button class="chat-sug-btn" onclick="enviarPergunta('Como exportar para Excel?')">Exportar Excel</button>
+      <button class="chat-sug-btn" onclick="enviarPergunta('Como baixar varios pagamentos?')">Pagamentos em lote</button>
+      <button class="chat-sug-btn" onclick="enviarPergunta('Como alterar minha senha?')">Alterar senha</button>
+      <button class="chat-sug-btn" onclick="enviarPergunta('Como visualizar anexos PDF?')">Visualizar PDF</button>
+      <button class="chat-sug-btn" onclick="enviarPergunta('Como ver o historico de acoes?')">Historico</button>
       <button class="chat-sug-btn" style="background:#24527a;color:white;border-color:#24527a;" onclick="voltarInicio()">Voltar ao inicio</button>
     </div>
     <div style="padding:0 16px 8px;">
@@ -1406,12 +1663,24 @@ function mostrarApp(user) {
   document.getElementById('header-user').textContent = user.full_name ? (user.full_name + ' (' + user.username + ')') : '';
   const dropUsuarios = document.getElementById('drop-usuarios');
   const subnavUsuarios = document.getElementById('subnav-usuarios');
-  if (user.role === 'admin') {
+  const isAdminOrSetorAdmin = user.role === 'admin' || user.role === 'setor_admin';
+  if (isAdminOrSetorAdmin) {
     if (dropUsuarios) dropUsuarios.style.display = '';
     if (subnavUsuarios) subnavUsuarios.style.display = '';
   } else {
     if (dropUsuarios) dropUsuarios.style.display = 'none';
     if (subnavUsuarios) subnavUsuarios.style.display = 'none';
+  }
+  const isSetorAdmin = user.role === 'setor_admin';
+  if (isSetorAdmin) {
+    const ddEmpresas = document.querySelector('#config-dropdown a[onclick*="empresas"]');
+    const ddTipos = document.querySelector('#config-dropdown a[onclick*="tipos"]');
+    const ddEmail = document.querySelector('#config-dropdown a[onclick*="email"]');
+    const ddSistema = document.querySelector('#config-dropdown a[onclick*="sistema"]');
+    if (ddEmpresas) ddEmpresas.style.display = 'none';
+    if (ddTipos) ddTipos.style.display = 'none';
+    if (ddEmail) ddEmail.style.display = 'none';
+    if (ddSistema) ddSistema.style.display = 'none';
   }
   loadDataFromDB();
 }
@@ -1420,6 +1689,22 @@ function mostrarLogin() {
   document.getElementById('login-content').style.display = 'block';
   document.getElementById('app-content').style.display = 'none';
   document.getElementById('reset-pass-content').style.display = 'none';
+}
+
+function togglePassword(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+    btn.setAttribute('aria-label', 'Ocultar senha');
+    btn.title = 'Ocultar senha';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁';
+    btn.setAttribute('aria-label', 'Mostrar senha');
+    btn.title = 'Mostrar senha';
+  }
 }
 
 function mostrarForgotPassword() {
@@ -1496,8 +1781,10 @@ let cachedTipos = [];
 let cachedEmpresas = [];
 let cachedUserEmpresas = [];
 let cachedDestinatarios = [];
+let cachedSectors = [];
+let cachedUserSetores = [];
 
-const requestDB = indexedDB.open("ControleContratos", 4);
+const requestDB = indexedDB.open("ControleContratos", 5);
 requestDB.onupgradeneeded = (e) => {
   db = e.target.result;
   console.log('IndexedDB: upgrade needed, version', e.oldVersion, '->', e.newVersion);
@@ -1507,6 +1794,8 @@ requestDB.onupgradeneeded = (e) => {
   if (!db.objectStoreNames.contains("empresas")) { db.createObjectStore("empresas", { keyPath: "id" }); console.log('Created store: empresas'); }
   if (!db.objectStoreNames.contains("user_empresas")) { db.createObjectStore("user_empresas", { keyPath: "userId" }); console.log('Created store: user_empresas'); }
   if (!db.objectStoreNames.contains("destinatarios")) { db.createObjectStore("destinatarios", { keyPath: "id" }); console.log('Created store: destinatarios'); }
+  if (!db.objectStoreNames.contains("sectors")) { db.createObjectStore("sectors", { keyPath: "id" }); console.log('Created store: sectors'); }
+  if (!db.objectStoreNames.contains("user_setores")) { db.createObjectStore("user_setores", { keyPath: "userId" }); console.log('Created store: user_setores'); }
   console.log('Stores after upgrade:', Array.from(db.objectStoreNames));
 };
 requestDB.onerror = (e) => {
@@ -1565,8 +1854,8 @@ function loadDataFromDB() {
     cachedContratos = r.contratos || [];
     cachedPagamentos = r.pagamentos || [];
 
-    carregar(["tipos", "empresas", "user_empresas", "destinatarios"], (r2) => {
-      console.log('Loaded tipos:', r2.tipos?.length, 'empresas:', r2.empresas?.length, 'user_empresas:', r2.user_empresas?.length);
+    carregar(["tipos", "empresas", "user_empresas", "destinatarios", "sectors", "user_setores"], (r2) => {
+      console.log('Loaded tipos:', r2.tipos?.length, 'empresas:', r2.empresas?.length, 'user_empresas:', r2.user_empresas?.length, 'sectors:', r2.sectors?.length, 'user_setores:', r2.user_setores?.length);
       cachedTipos = r2.tipos || [];
       // Deduplica tipos por nome (corrige duplicatas de upgrades anteriores)
       const seen = new Set();
@@ -1585,6 +1874,8 @@ function loadDataFromDB() {
       cachedEmpresas = r2.empresas || [];
       cachedUserEmpresas = r2.user_empresas || [];
       cachedDestinatarios = r2.destinatarios || [];
+      cachedSectors = r2.sectors || [];
+      cachedUserSetores = r2.user_setores || [];
 
       if (cachedTipos.length === 0) {
         try {
@@ -1659,6 +1950,42 @@ function saveDestinatarios(arr) {
   syncToServer();
 }
 
+function getSectors() { return cachedSectors; }
+function saveSectors(arr) {
+  cachedSectors = arr;
+  const t = db.transaction("sectors", "readwrite");
+  t.objectStore("sectors").clear();
+  arr.forEach(a => t.objectStore("sectors").put(a));
+}
+
+function getUserSetores(userId) {
+  return cachedUserSetores.find(u => u.userId === userId);
+}
+function saveUserSetores(userId, setorIds) {
+  const existing = cachedUserSetores.find(u => u.userId === userId);
+  if (existing) {
+    existing.setorIds = setorIds;
+  } else {
+    cachedUserSetores.push({ userId, setorIds });
+  }
+  const t = db.transaction("user_setores", "readwrite");
+  t.objectStore("user_setores").clear();
+  cachedUserSetores.forEach(a => t.objectStore("user_setores").put(a));
+}
+function getLoggedUserSetorIds() {
+  const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  if (!user || !user.id) return null;
+  if (user.role === 'admin') return null;
+  const us = getUserSetores(user.id);
+  if (!us || !us.setorIds || !us.setorIds.length) return null;
+  const temFinanceiro = us.setorIds.some(sid => {
+    const s = cachedSectors.find(x => x.id === sid);
+    return s && s.nome.toLowerCase() === 'financeiro';
+  });
+  if (temFinanceiro) return null;
+  return us.setorIds;
+}
+
 function popularTipoSelect() {
   const sel = document.getElementById('f-tipo');
   if (!sel) return;
@@ -1667,6 +1994,19 @@ function popularTipoSelect() {
   getTipos().filter(t => t.active !== 0).forEach(t => {
     const opt = document.createElement('option');
     opt.value = t.nome; opt.textContent = t.nome;
+    sel.appendChild(opt);
+  });
+  if (atual) sel.value = atual;
+}
+
+function popularSetorSelect() {
+  const sel = document.getElementById('f-setor');
+  if (!sel) return;
+  const atual = sel.value;
+  sel.innerHTML = '<option value="">Selecione o setor...</option>';
+  getSectors().filter(s => s.active !== 0).forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.nome; opt.textContent = s.nome;
     sel.appendChild(opt);
   });
   if (atual) sel.value = atual;
@@ -1744,26 +2084,170 @@ function popularEmpresaSelect() {
   if (atual) sel.value = atual;
 }
 
+function renderTagsDropdown(containerId, allItems, selectedIds, labelKey, filterActive) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  const profile = document.getElementById('mu-perfil')?.value;
+  if (profile === 'admin') {
+    wrap.innerHTML = '<div class="tags-dropdown-admin-msg">Acesso total — todas as opções disponíveis</div>';
+    wrap._selectedIds = [];
+    return;
+  }
+  const loggedUser = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const isLoggedSetorAdmin = loggedUser.role === 'setor_admin';
+  let items = filterActive ? allItems.filter(i => i.active !== 0) : allItems;
+  if (isLoggedSetorAdmin && profile !== 'admin') {
+    const rawLoggedSetorIds = getLoggedUserSetorIds();
+    if (rawLoggedSetorIds && Array.isArray(rawLoggedSetorIds) && rawLoggedSetorIds.length > 0) {
+      if (labelKey === 'nome' && items[0]?.id && cachedSectors.some(s => s.id === items[0]?.id)) {
+        items = items.filter(i => rawLoggedSetorIds.includes(i.id));
+      }
+    }
+  }
+  wrap._selectedIds = [...(selectedIds || [])];
+
+  function render() {
+    const sel = new Set(wrap._selectedIds);
+    const tags = items.filter(i => sel.has(i.id)).map(i =>
+      `<span class="tag-item">${escapeHtml(i[labelKey])}<span class="tag-remove" data-id="${i.id}">&times;</span></span>`
+    ).join('');
+
+    wrap.innerHTML = `
+      <div class="tags-dropdown-wrap">
+        <div class="tags-dropdown-trigger" onclick="toggleTagsDropdown(this)">
+          ${tags || '<span class="placeholder">Selecione...</span>'}
+          <span class="arrow">&#9660;</span>
+        </div>
+        <div class="tags-dropdown-panel">
+          <div class="tags-dropdown-search"><input type="text" class="td-search" placeholder="Buscar..." oninput="filterTagsDropdown(this)"/></div>
+          <div class="tags-dropdown-actions">
+            <button onclick="tagsSelectAll('${containerId}')">Selecionar todos</button>
+            <button onclick="tagsClearAll('${containerId}')">Limpar</button>
+          </div>
+          <div class="tags-dropdown-list" id="${containerId}-list"></div>
+        </div>
+      </div>`;
+
+    renderTagsList(containerId, items, labelKey);
+
+    wrap.querySelectorAll('.tag-remove').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        wrap._selectedIds = wrap._selectedIds.filter(id => id !== btn.dataset.id);
+        render();
+      });
+    });
+  }
+
+  render();
+}
+
+function renderTagsList(containerId, items, labelKey) {
+  const list = document.getElementById(containerId + '-list');
+  if (!list) return;
+  const wrap = document.getElementById(containerId);
+  const sel = new Set(wrap._selectedIds);
+  const search = (list.closest('.tags-dropdown-panel')?.querySelector('.td-search')?.value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const filtered = items.filter(i => !search || i[labelKey].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(search));
+
+  if (!filtered.length) {
+    list.innerHTML = '<div class="tags-dropdown-empty">Nenhum item encontrado</div>';
+    return;
+  }
+  list.innerHTML = filtered.map(i => `
+    <label class="tags-dropdown-item ${sel.has(i.id) ? 'checked' : ''}">
+      <input type="checkbox" value="${i.id}" ${sel.has(i.id) ? 'checked' : ''}/>
+      <span>${escapeHtml(i[labelKey])}</span>
+    </label>
+  `).join('');
+
+  list.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) {
+        if (!wrap._selectedIds.includes(cb.value)) wrap._selectedIds.push(cb.value);
+      } else {
+        wrap._selectedIds = wrap._selectedIds.filter(id => id !== cb.value);
+      }
+      renderTagsDropdown_updateTags(containerId, items, labelKey);
+    });
+  });
+}
+
+function renderTagsDropdown_updateTags(containerId, items, labelKey) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  const sel = new Set(wrap._selectedIds);
+  const tags = items.filter(i => sel.has(i.id)).map(i =>
+    `<span class="tag-item">${escapeHtml(i[labelKey])}<span class="tag-remove" data-id="${i.id}">&times;</span></span>`
+  ).join('');
+  const trigger = wrap.querySelector('.tags-dropdown-trigger');
+  if (trigger) {
+    const arrow = '<span class="arrow">&#9660;</span>';
+    trigger.innerHTML = tags + arrow;
+    trigger.querySelectorAll('.tag-remove').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        wrap._selectedIds = wrap._selectedIds.filter(id => id !== btn.dataset.id);
+        renderTagsDropdown_updateTags(containerId, items, labelKey);
+        renderTagsList(containerId, items, labelKey);
+      });
+    });
+  }
+  renderTagsList(containerId, items, labelKey);
+}
+
+function toggleTagsDropdown(trigger) {
+  const panel = trigger.nextElementSibling;
+  const wasOpen = panel.classList.contains('open');
+  document.querySelectorAll('.tags-dropdown-panel.open').forEach(p => p.classList.remove('open'));
+  document.querySelectorAll('.tags-dropdown-trigger.open').forEach(t => t.classList.remove('open'));
+  if (!wasOpen) {
+    panel.classList.add('open');
+    trigger.classList.add('open');
+    panel.querySelector('.td-search')?.focus();
+  }
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.tags-dropdown-wrap')) {
+    document.querySelectorAll('.tags-dropdown-panel.open').forEach(p => p.classList.remove('open'));
+    document.querySelectorAll('.tags-dropdown-trigger.open').forEach(t => t.classList.remove('open'));
+  }
+});
+
+function filterTagsDropdown(input) {
+  const panel = input.closest('.tags-dropdown-panel');
+  const wrapId = panel.closest('.tags-dropdown-wrap').parentElement.id;
+  const wrap = document.getElementById(wrapId);
+  if (!wrap || !wrap._allItems) return;
+  renderTagsList(wrapId, wrap._allItems, wrap._labelKey);
+}
+
+function tagsSelectAll(containerId) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap || !wrap._allItems) return;
+  wrap._selectedIds = wrap._allItems.filter(i => i.active !== 0).map(i => i.id);
+  renderTagsDropdown_updateTags(containerId, wrap._allItems, wrap._labelKey);
+}
+
+function tagsClearAll(containerId) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  wrap._selectedIds = [];
+  renderTagsDropdown_updateTags(containerId, wrap._allItems || [], wrap._labelKey || 'nome');
+}
+
 function popularEmpresaCheckboxes() {
-  const container = document.getElementById('mu-empresas');
+  const container = document.getElementById('mu-empresas-dual');
   if (!container) return;
   const empresas = getEmpresas();
-  const isAdmin = document.getElementById('mu-perfil').value === 'admin';
-  if (!empresas.length) {
+  const isAdmin = document.getElementById('mu-perfil')?.value === 'admin';
+  if (!empresas.length && !isAdmin) {
     container.innerHTML = '<span style="color:#aaa;font-size:0.85rem;">Nenhuma empresa cadastrada.</span>';
     return;
   }
-  if (isAdmin) {
-    container.innerHTML = '<span style="color:#2e7d52;font-size:0.85rem;font-weight:500;">Acesso total a todas as empresas</span>';
-    return;
-  }
-  const selected = JSON.parse(container.dataset.selected || '[]');
-  container.innerHTML = empresas.filter(e => e.active !== 0).map(e => `
-    <label>
-      <input type="checkbox" value="${e.id}" ${selected.includes(e.id) ? 'checked' : ''}/>
-      ${escapeHtml(e.nome)}
-    </label>
-  `).join('');
+  container._allItems = empresas;
+  container._labelKey = 'nome';
+  renderTagsDropdown('mu-empresas-dual', empresas, container._selectedIds || [], 'nome', true);
 }
 
 let _editandoEmpresaId = null;
@@ -1861,6 +2345,113 @@ function inativarEmpresa(id) {
   popularEmpresaCheckboxes();
   popularDestEmpresaCheckboxes();
   mostrarToast(`Empresa ${e.active ? 'ativada' : 'inativada'} com sucesso.`, 'sucesso');
+}
+
+// ===================== SETORES =====================
+let _editandoSetorId = null;
+
+function renderSetoresConfig() {
+  const tb = document.getElementById('tb-setores');
+  if (!tb) return;
+  const sectors = getSectors();
+  if (!sectors.length) {
+    tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#aaa;padding:32px">Nenhum setor cadastrado.</td></tr>';
+    return;
+  }
+  const _user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const isAdmin = _user.role === 'admin';
+  tb.innerHTML = sectors.map((s, i) => {
+    const ativo = s.active !== 0;
+    return `<tr${ativo ? '' : ' style="opacity:0.55"'}>
+    <td>${i + 1}</td>
+    <td>${escapeHtml(s.nome)} ${ativo ? '' : '<span class="badge badge-vencido">Inativo</span>'}</td>
+    <td style="display:flex;gap:4px;">
+      <button class="btn btn-sm btn-primary" onclick="editarSetor('${s.id}')" style="padding:2px 8px;font-size:0.75rem;">Editar</button>
+      <button class="btn btn-sm ${ativo ? 'btn-warning' : 'btn-secondary'}" onclick="inativarSetor('${s.id}')" style="padding:2px 8px;font-size:0.75rem;">${ativo ? 'Inativar' : 'Ativar'}</button>
+      ${isAdmin ? `<button class="btn btn-sm btn-danger" onclick="excluirSetor('${s.id}')" style="padding:2px 8px;font-size:0.75rem;">Excluir</button>` : ''}
+    </td>
+  </tr>`}).join('');
+}
+
+function limparFormSetor() {
+  _editandoSetorId = null;
+  document.getElementById('novo-setor-nome').value = '';
+  document.getElementById('btn-salvar-setor').textContent = 'Adicionar';
+}
+
+function editarSetor(id) {
+  const s = getSectors().find(x => x.id === id);
+  if (!s) return;
+  _editandoSetorId = id;
+  document.getElementById('novo-setor-nome').value = s.nome;
+  document.getElementById('btn-salvar-setor').textContent = 'Salvar';
+}
+
+function salvarSetor() {
+  const nome = document.getElementById('novo-setor-nome').value.trim();
+  if (!nome) { mostrarToast('Informe o nome do setor.', 'erro'); return; }
+  const sectors = getSectors();
+  const duplicata = sectors.find(s => s.nome.toLowerCase() === nome.toLowerCase() && s.id !== _editandoSetorId);
+  if (duplicata) { mostrarToast('Este setor ja existe.', 'erro'); return; }
+
+  getCsrfToken().then(() => {
+    if (_editandoSetorId) {
+      const idx = sectors.findIndex(s => s.id === _editandoSetorId);
+      if (idx !== -1) sectors[idx].nome = nome;
+      fetch('/api/sectors/' + _editandoSetorId, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ nome }) }).catch(() => {});
+    } else {
+      const newId = uid();
+      sectors.push({ id: newId, nome, active: 1, criadoEm: new Date().toISOString() });
+      fetch('/api/sectors', { method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ id: newId, nome, active: 1 }) }).catch(() => {});
+    }
+    saveSectors(sectors);
+    limparFormSetor();
+    renderSetoresConfig();
+    popularSetorSelect();
+    popularSetorCheckboxes();
+    mostrarToast('Setor salvo com sucesso!', 'sucesso');
+  });
+}
+
+function excluirSetor(id) {
+  if (!confirm('Excluir este setor?')) return;
+  const sectors = getSectors().filter(s => s.id !== id);
+  saveSectors(sectors);
+  fetch('/api/sectors/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
+  limparFormSetor();
+  renderSetoresConfig();
+  popularSetorSelect();
+  popularSetorCheckboxes();
+  mostrarToast('Setor excluido.', 'sucesso');
+}
+
+function inativarSetor(id) {
+  const sectors = getSectors();
+  const s = sectors.find(x => x.id === id);
+  if (!s) return;
+  s.active = s.active === 0 ? 1 : 0;
+  saveSectors(sectors);
+  getCsrfToken().then(() => {
+    fetch('/api/sectors/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: s.active }) }).catch(() => {});
+  });
+  renderSetoresConfig();
+  popularSetorSelect();
+  popularSetorCheckboxes();
+  mostrarToast(`Setor ${s.active ? 'ativado' : 'inativado'} com sucesso.`, 'sucesso');
+}
+
+function popularSetorCheckboxes() {
+  const container = document.getElementById('mu-setores-dual');
+  if (!container) return;
+  const sectors = getSectors();
+  const isAdmin = document.getElementById('mu-perfil')?.value === 'admin';
+  if (!sectors.length && !isAdmin) {
+    container.innerHTML = '<span style="color:#aaa;font-size:0.85rem;">Nenhum setor cadastrado.</span>';
+    return;
+  }
+  container._allItems = sectors;
+  container._labelKey = 'nome';
+  renderTagsDropdown('mu-setores-dual', sectors, container._selectedIds || [], 'nome', true);
 }
 
 // ===================== DESTINATARIOS =====================
@@ -2073,7 +2664,16 @@ function loadFromServer() {
       }));
       cachedDestinatarios = serverDests; saveDestinatarios(serverDests);
     }
+    if (data.sectors && data.sectors.length) {
+      const serverSectors = data.sectors.map(s => ({
+        id: s.id, nome: s.nome,
+        active: s.active !== undefined ? s.active : 1,
+        criadoEm: s.criado_em
+      }));
+      cachedSectors = serverSectors; saveSectors(serverSectors);
     }
+    }
+    setTimeout(checkNotificacoes, 500);
   }).catch(() => {});
 }
 
@@ -2149,7 +2749,7 @@ function showPage(id, btn) {
   if (id === 'dashboard') renderDashboard();
   if (id === 'contratos') renderContratos();
   if (id === 'pagamentos') renderPagamentos();
-  if (id === 'novo-contrato') { limparFormContrato(); popularTipoSelect(); popularEmpresaSelect(); }
+  if (id === 'novo-contrato') { limparFormContrato(); popularTipoSelect(); popularEmpresaSelect(); popularSetorSelect(); }
   if (id === 'configuracao') {
     const activeSub = document.querySelector('.config-section.active');
     if (!activeSub) showConfigSub('usuarios');
@@ -2164,8 +2764,13 @@ function toggleConfigDropdown(event) {
 
 function showConfigSub(section) {
   const user = JSON.parse(sessionStorage.getItem('user') || '{}');
-  if (section === 'usuarios' && user.role !== 'admin') {
-    section = 'email';
+  const isAdminOrSetorAdmin = user.role === 'admin' || user.role === 'setor_admin';
+  const isSetorAdmin = user.role === 'setor_admin';
+  if (section === 'usuarios' && !isAdminOrSetorAdmin) {
+    section = 'minha-conta';
+  }
+  if (isSetorAdmin && ['empresas', 'setores', 'tipos', 'email', 'historico'].includes(section)) {
+    section = 'usuarios';
   }
 
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -2186,9 +2791,11 @@ function showConfigSub(section) {
 
   if (section === 'usuarios') renderUsuarios();
   if (section === 'empresas') { renderEmpresasConfig(); popularDestEmpresaCheckboxes(); }
+  if (section === 'setores') renderSetoresConfig();
   if (section === 'tipos') renderTiposConfig();
   if (section === 'destinatarios') { renderDestinatariosConfig(); popularDestEmpresaCheckboxes(); }
   if (section === 'email') carregarConfig();
+  if (section === 'historico') carregarHistorico();
 }
 
 document.addEventListener('click', function(e) {
@@ -2201,6 +2808,12 @@ document.addEventListener('click', function(e) {
 // ===================== MODAIS =====================
 function abrirModal(id) { document.getElementById(id).classList.add('open'); }
 function fecharModal(id) { document.getElementById(id).classList.remove('open'); }
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+  }
+});
 
 // ===================== FORM CONTRATO =====================
 function toggleParcelas() {
@@ -2432,27 +3045,62 @@ function calcularMeses(inicio, fim) {
 }
 
 // ===================== LISTAR CONTRATOS =====================
-function renderContratos() {
+function renderContratos(page) {
+  if (page !== undefined) ctCurrentPage = page;
   const empresas = getEmpresas();
   const empIds = getLoggedUserEmpresaIds();
   let lista = getContratos();
   if (empIds) lista = lista.filter(c => c.empresaId && empIds.includes(c.empresaId));
+  const setorIds = getLoggedUserSetorIds();
+  if (setorIds) lista = lista.filter(c => c.setor && setorIds.includes(c.setor));
+
+  const filtroParte = (document.getElementById('filtro-ct-parte')?.value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const filtroStatus = document.getElementById('filtro-ct-status')?.value || '';
+  const filtroInicio = document.getElementById('filtro-ct-inicio')?.value || '';
+  const filtroFim = document.getElementById('filtro-ct-fim')?.value || '';
+  const filtroValorMin = parseFloat(document.getElementById('filtro-ct-valor-min')?.value) || 0;
+  const filtroValorMax = parseFloat(document.getElementById('filtro-ct-valor-max')?.value) || Infinity;
 
   const tb = document.getElementById('tb-contratos');
   const hoje = new Date(); hoje.setHours(0,0,0,0);
 
-  if (!lista.length) {
-    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">Nenhum contrato cadastrado.</td></tr>';
+  if (filtroParte) {
+    lista = lista.filter(c => {
+      const texto = ((c.parte || '') + ' ' + (c.cnpj || '') + ' ' + (c.cpf || '')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return texto.includes(filtroParte);
+    });
+  }
+
+  if (filtroInicio) lista = lista.filter(c => c.inicio && c.inicio >= filtroInicio);
+  if (filtroFim) lista = lista.filter(c => c.fim && c.fim <= filtroFim);
+  if (filtroValorMin > 0) lista = lista.filter(c => (c.valor || 0) >= filtroValorMin);
+  if (filtroValorMax < Infinity) lista = lista.filter(c => (c.valor || 0) <= filtroValorMax);
+
+  lista = lista.filter(c => {
+    const fim = new Date(c.fim + 'T12:00:00');
+    const userInativo = c.active === 0;
+    const status = userInativo ? 'inativo' : (fim >= hoje ? 'ativo' : 'vencido');
+    return !filtroStatus || status === filtroStatus;
+  });
+
+  const total = lista.length;
+  const start = (ctCurrentPage - 1) * PAGE_SIZE;
+  const paginated = lista.slice(start, start + PAGE_SIZE);
+
+  renderPagination(total, ctCurrentPage, 'ct-pagination', 'renderContratos');
+
+  if (!paginated.length) {
+    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">Nenhum contrato encontrado.</td></tr>';
     return;
   }
 
   const _user = JSON.parse(sessionStorage.getItem('user') || '{}');
   const isAdmin = _user.role === 'admin';
-  tb.innerHTML = lista.map(c => {
+  tb.innerHTML = paginated.map(c => {
     const fim = new Date(c.fim + 'T12:00:00');
     const dataAtivo = fim >= hoje;
     const userInativo = c.active === 0;
-    const status = userInativo ? 'vencido' : (dataAtivo ? 'ativo' : 'vencido');
+    const status = userInativo ? 'inativo' : (dataAtivo ? 'ativo' : 'vencido');
     const labelStatus = userInativo ? 'Inativo' : (dataAtivo ? 'Ativo' : 'Vencido');
     const aditivosBadge = c.aditivos?.length
       ? `<span class="badge badge-aditivo">${c.aditivos.length} adit.</span>` : '';
@@ -2470,7 +3118,7 @@ function renderContratos() {
       <td>R$ ${fmtMoeda(c.valor)}</td>
       <td>${fmtData(c.inicio)} → ${fmtData(c.fim)}</td>
       <td>${anexoUI}</td>
-      <td><span class="badge badge-${status}">${escapeHtml(labelStatus)}</span> ${aditivosBadge}</td>
+      <td><span class="badge badge-${escapeHtml(status)}">${escapeHtml(labelStatus)}</span> ${aditivosBadge}</td>
       <td style="display:flex;gap:4px;flex-wrap:nowrap;white-space:nowrap">
         <button class="btn btn-sm btn-primary" onclick="abrirDetalhe('${c.id}')">Ver</button>
         <button class="btn btn-sm btn-warning" onclick="editarContrato('${c.id}')">Editar</button>
@@ -2484,13 +3132,13 @@ function renderContratos() {
 
 window.baixarAnexo = function(id) {
   const c = getContratos().find(x => x.id === id);
-  if(c && c.arquivo) downloadBase64(c.arquivo.data, c.arquivo.name);
+  if(c && c.arquivo) previewAnexo(c.arquivo.data, c.arquivo.name);
 }
 window.baixarAnexoAditivo = function(contratoId, aditivoId) {
   const c = getContratos().find(x => x.id === contratoId);
   if (c && c.aditivos) {
     const a = c.aditivos.find(x => x.id === aditivoId);
-    if (a && a.arquivo) downloadBase64(a.arquivo.data, a.arquivo.name);
+    if (a && a.arquivo) previewAnexo(a.arquivo.data, a.arquivo.name);
   }
 }
 
@@ -2525,7 +3173,7 @@ function abrirDetalhe(id) {
   if (c.resumo) {
     html += `<h4 style="margin:12px 0 4px;color:#1a3c5e;">Resumo do Contrato</h4>`;
     html += `<p style="font-size:0.9rem;line-height:1.5;white-space:pre-wrap;">${escapeHtml(c.resumo)}</p>`;
-    html += `<button class="btn btn-sm btn-light" onclick="gerarResumo('contract','${c.id}')" style="margin-top:4px;">Regenerar</button>`;
+    html += `<button class="btn btn-sm btn-primary" onclick="gerarResumo('contract','${c.id}')" style="margin-top:8px;">📄 Regenerar Resumo com IA</button>`;
   } else {
     html += `<button class="btn btn-sm btn-primary" onclick="gerarResumo('contract','${c.id}')" style="margin-top:8px;">📄 Gerar Resumo com IA</button>`;
   }
@@ -2806,13 +3454,20 @@ function calcStatusPgto(p) {
   return venc < hoje ? 'atrasado' : 'pendente';
 }
 
-function renderPagamentos() {
+function renderPagamentos(page) {
+  if (page !== undefined) pgCurrentPage = page;
   const filtroContrato = document.getElementById('filtro-contrato').value;
   const filtroStatus   = document.getElementById('filtro-status').value;
+  const filtroPgInicio = document.getElementById('filtro-pg-inicio')?.value || '';
+  const filtroPgFim    = document.getElementById('filtro-pg-fim')?.value || '';
+  const filtroValorMin = parseFloat(document.getElementById('filtro-pg-valor-min')?.value) || 0;
+  const filtroValorMax = parseFloat(document.getElementById('filtro-pg-valor-max')?.value) || Infinity;
   const contratos = getContratos();
   const empIds = getLoggedUserEmpresaIds();
   let filteredContratos = contratos;
   if (empIds) filteredContratos = contratos.filter(c => c.empresaId && empIds.includes(c.empresaId));
+  const setorIds = getLoggedUserSetorIds();
+  if (setorIds) filteredContratos = filteredContratos.filter(c => c.setor && setorIds.includes(c.setor));
 
   const sel = document.getElementById('filtro-contrato');
   const cur = sel.value;
@@ -2826,16 +3481,26 @@ function renderPagamentos() {
 
   lista = lista.map(p => ({...p, _status: calcStatusPgto(p)}));
   if (filtroStatus) lista = lista.filter(p => p._status === filtroStatus);
+  if (filtroPgInicio) lista = lista.filter(p => p.vencimento && p.vencimento >= filtroPgInicio);
+  if (filtroPgFim) lista = lista.filter(p => p.vencimento && p.vencimento <= filtroPgFim);
+  if (filtroValorMin > 0) lista = lista.filter(p => (p.valor || 0) >= filtroValorMin);
+  if (filtroValorMax < Infinity) lista = lista.filter(p => (p.valor || 0) <= filtroValorMax);
 
   lista.sort((a,b)=> a.vencimento.localeCompare(b.vencimento));
 
+  const total = lista.length;
+  const start = (pgCurrentPage - 1) * PAGE_SIZE;
+  const paginated = lista.slice(start, start + PAGE_SIZE);
+
+  renderPagination(total, pgCurrentPage, 'pg-pagination', 'renderPagamentos');
+
   const tb = document.getElementById('tb-pagamentos');
   const empresas = getEmpresas();
-  if (!lista.length) {
+  if (!paginated.length) {
     tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">Nenhum pagamento.</td></tr>';
     return;
   }
-  tb.innerHTML = lista.map(p => {
+  tb.innerHTML = paginated.map(p => {
     const st = p._status;
     const c  = contratos.find(x => x.id === p.contratoId);
     const empresaNome = c ? (empresas.find(e => e.id === c.empresaId)?.nome || '—') : '—';
@@ -2851,6 +3516,7 @@ function renderPagamentos() {
          <button class="btn btn-sm btn-danger" onclick="excluirPgto('${p.id}')">Exc</button>`;
       
     return `<tr>
+      <td><input type="checkbox" class="pg-checkbox" value="${p.id}" onchange="updateBatchBar()"/></td>
       <td><strong>${escapeHtml(p.contratoNum)}</strong>${c?`<br><small style="color:#888">${escapeHtml(c.parte)}</small>`:''}</td>
       <td>${escapeHtml(p.descricao)}</td>
       <td style="font-size:0.8rem;">${empresaNome}</td>
@@ -2866,7 +3532,7 @@ function renderPagamentos() {
 
 window.baixarComprovante = function(id) {
   const p = getPagamentos().find(x => x.id === id);
-  if(p && p.comprovante) downloadBase64(p.comprovante.data, p.comprovante.name);
+  if(p && p.comprovante) previewAnexo(p.comprovante.data, p.comprovante.name);
 }
 
 function abrirLancarPgto(contratoId) {
@@ -2984,6 +3650,8 @@ function renderDashboard() {
   const empIds = getLoggedUserEmpresaIds();
   let contratos  = getContratos().filter(c => c.active !== 0);
   if (empIds) contratos = contratos.filter(c => c.empresaId && empIds.includes(c.empresaId));
+  const setorIds = getLoggedUserSetorIds();
+  if (setorIds) contratos = contratos.filter(c => c.setor && setorIds.includes(c.setor));
   const contratoIds = new Set(contratos.map(c => c.id));
   let pagamentos = getPagamentos();
   if (empIds) pagamentos = pagamentos.filter(p => contratoIds.has(p.contratoId));
@@ -3130,14 +3798,22 @@ function abrirModalUsuario(dados) {
   document.getElementById('mu-senha').value = '';
   document.getElementById('mu-senha').required = !dados;
   document.getElementById('mu-perfil').value = dados ? dados.role : 'user';
-  const container = document.getElementById('mu-empresas');
+  const container = document.getElementById('mu-empresas-dual');
   if (dados) {
     const ue = getUserEmpresas(dados.id);
-    container.dataset.selected = JSON.stringify(ue ? ue.empresaIds : []);
+    container._selectedIds = ue ? [...ue.empresaIds] : [];
   } else {
-    container.dataset.selected = '[]';
+    container._selectedIds = [];
   }
   popularEmpresaCheckboxes();
+  const containerSetores = document.getElementById('mu-setores-dual');
+  if (dados) {
+    const us = getUserSetores(dados.id);
+    containerSetores._selectedIds = us ? [...us.setorIds] : [];
+  } else {
+    containerSetores._selectedIds = [];
+  }
+  popularSetorCheckboxes();
   abrirModal('modal-usuario');
 }
 
@@ -3150,12 +3826,48 @@ function salvarUsuario() {
   if (!username || !full_name) { alert('Preencha usuário e nome completo.'); return; }
   if (!_editandoUsuario && !password) { alert('Informe a senha.'); return; }
 
-  const isAdmin = document.getElementById('mu-perfil').value === 'admin';
+  const loggedUser = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const isAdmin = role === 'admin';
+  const isSetorAdmin = role === 'setor_admin';
+  const isLoggedAdmin = loggedUser.role === 'admin';
+  const isLoggedSetorAdmin = loggedUser.role === 'setor_admin';
+
+  // setor_admin não pode criar admin
+  if (isSetorAdmin && !isLoggedAdmin) {
+    alert('Apenas administradores globais podem criar administradores de setor.');
+    return;
+  }
+
   const empresaIds = [];
-  if (!isAdmin) {
-    document.querySelectorAll('#mu-empresas input[type="checkbox"]:checked').forEach(cb => {
-      empresaIds.push(cb.value);
-    });
+  const setorIds = [];
+
+  if (isAdmin) {
+    // admin global: pode atribuir qualquer empresa/setor
+    const empContainer = document.getElementById('mu-empresas-dual');
+    if (empContainer && empContainer._selectedIds) empresaIds.push(...empContainer._selectedIds);
+    const setContainer = document.getElementById('mu-setores-dual');
+    if (setContainer && setContainer._selectedIds) setorIds.push(...setContainer._selectedIds);
+  } else if (isSetorAdmin) {
+    // setor_admin: só pode atribuir setores que ELE tem acesso (null =Financeiro = todos)
+    const rawLoggedSetorIds = getLoggedUserSetorIds();
+    const hasSetorFilter = Array.isArray(rawLoggedSetorIds) && rawLoggedSetorIds.length > 0;
+    const loggedSetorIds = rawLoggedSetorIds || [];
+    const setContainer = document.getElementById('mu-setores-dual');
+    if (setContainer && setContainer._selectedIds) {
+      setContainer._selectedIds.forEach(sid => {
+        if (!hasSetorFilter || loggedSetorIds.includes(sid)) setorIds.push(sid);
+      });
+    }
+    if (setorIds.length === 0) {
+      alert('Selecione pelo menos um setor que você tem acesso.');
+      return;
+    }
+  } else {
+    // usuário comum: empresas e setores selecionados
+    const empContainer = document.getElementById('mu-empresas-dual');
+    if (empContainer && empContainer._selectedIds) empresaIds.push(...empContainer._selectedIds);
+    const setContainer = document.getElementById('mu-setores-dual');
+    if (setContainer && setContainer._selectedIds) setorIds.push(...setContainer._selectedIds);
   }
 
   function onUserSaved(userId) {
@@ -3167,8 +3879,18 @@ function salvarUsuario() {
         t.objectStore("user_empresas").clear();
         cachedUserEmpresas.forEach(a => t.objectStore("user_empresas").put(a));
       }
-    } else if (empresaIds.length) {
-      saveUserEmpresas(userId, empresaIds);
+      const existingSetores = cachedUserSetores.find(u => u.userId === userId);
+      if (existingSetores) {
+        cachedUserSetores = cachedUserSetores.filter(u => u.userId !== userId);
+        const ts = db.transaction("user_setores", "readwrite");
+        ts.objectStore("user_setores").clear();
+        cachedUserSetores.forEach(a => ts.objectStore("user_setores").put(a));
+      }
+    } else {
+      if (empresaIds.length) {
+        saveUserEmpresas(userId, empresaIds);
+      }
+      saveUserSetores(userId, setorIds);
     }
     fecharModal('modal-usuario');
     renderUsuarios();
@@ -3200,38 +3922,65 @@ function excluirUsuario(id) {
 function renderUsuarios() {
   const tb = document.getElementById('tb-usuarios');
   const empresas = getEmpresas();
+  const loggedUser = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const isLoggedAdmin = loggedUser.role === 'admin';
+  const isLoggedSetorAdmin = loggedUser.role === 'setor_admin';
+  const rawLoggedSetorIds = getLoggedUserSetorIds();
+  const hasSetorFilter = isLoggedSetorAdmin && Array.isArray(rawLoggedSetorIds) && rawLoggedSetorIds.length > 0;
+  const loggedSetorIds = rawLoggedSetorIds || [];
+
   fetch('/api/users')
     .then(r => { try { return r.json(); } catch(e) { throw new Error('Resposta invalida do servidor (status ' + r.status + ')'); } })
     .then(users => {
       if (users && users.ok === false) {
         if (users.erro === 'Nao autenticado') { sessionStorage.removeItem('logged_in'); sessionStorage.removeItem('user'); mostrarLogin(); return; }
-        tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">' + (users.erro || 'Servidor offline') + '</td></tr>'; return;
+        tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#aaa;padding:32px">' + (users.erro || 'Servidor offline') + '</td></tr>'; return;
       }
-      if (!Array.isArray(users)) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">Servidor offline</td></tr>'; return; }
-      tb.innerHTML = users.map(u => {
+      if (!Array.isArray(users)) { tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#aaa;padding:32px">Servidor offline</td></tr>'; return; }
+
+      let filteredUsers = users;
+      if (isLoggedSetorAdmin) {
+        filteredUsers = users.filter(u => {
+          if (u.role === 'admin') return false;
+          if (u.id === loggedUser.id) return true;
+          if (!hasSetorFilter) return true;
+          const us = getUserSetores(u.id);
+          if (!us || !us.setorIds || !us.setorIds.length) return false;
+          return us.setorIds.some(sid => loggedSetorIds.includes(sid));
+        });
+      }
+
+      tb.innerHTML = filteredUsers.map(u => {
         const ue = getUserEmpresas(u.id);
         const empNomes = u.role === 'admin' ? '<span style="color:#2e7d52;font-weight:500;">Todas</span>' : (ue ? ue.empresaIds.map(eid => {
           const e = empresas.find(x => x.id === eid);
           return e ? e.nome : null;
         }).filter(Boolean).join(', ') : '—');
+        const sectors = getSectors();
+        const us = getUserSetores(u.id);
+        const setorNomes = u.role === 'admin' ? '<span style="color:#2e7d52;font-weight:500;">Todos</span>' : (us ? us.setorIds.map(sid => {
+          const s = sectors.find(x => x.id === sid);
+          return s ? s.nome : null;
+        }).filter(Boolean).join(', ') : '—');
+        const canEdit = isLoggedAdmin || u.id === loggedUser.id || (isLoggedSetorAdmin && setorNomes !== '—');
+        const roleLabel = u.role === 'admin' ? 'Admin' : (u.role === 'setor_admin' ? 'Admin Setor' : 'Usuário');
         return `<tr>
         <td>${escapeHtml(String(u.id))}</td><td>${escapeHtml(u.username)}</td><td>${escapeHtml(u.full_name)}</td><td>${escapeHtml(u.email || '—')}</td>
-        <td>${u.role === 'admin' ? 'Admin' : 'Usuário'}</td>
+        <td>${roleLabel}</td>
         <td style="font-size:0.8rem;max-width:200px;white-space:normal;">${empNomes}</td>
+        <td style="font-size:0.8rem;max-width:200px;white-space:normal;">${setorNomes}</td>
         <td>${u.active ? '<span class="badge badge-ativo">Sim</span>' : '<span class="badge badge-vencido">Não</span>'}</td>
         <td>${u.created_at || '-'}</td>
         <td style="display:flex;gap:4px;">
-          <button class="btn btn-sm btn-primary" onclick='abrirModalUsuario(${JSON.stringify(u).replace(/'/g,"&#39;")})'>Editar</button>
-          ${u.id === 1 ? '<span style="color:#aaa;font-size:0.78rem;">—</span>' : `<button class="btn btn-sm btn-danger" onclick="excluirUsuario(${escapeHtml(String(u.id))})">Inat</button>`}
+          ${canEdit ? `<button class="btn btn-sm btn-primary" onclick='abrirModalUsuario(${JSON.stringify(u).replace(/'/g,"'")})'>Editar</button>` : ''}
+          ${u.id === 1 ? '<span style="color:#aaa;font-size:0.78rem;">—</span>' : (isLoggedAdmin ? `<button class="btn btn-sm btn-danger" onclick="excluirUsuario(${escapeHtml(String(u.id))})">Inat</button>` : '')}
         </td>
       </tr>`;
       }).join('');
     }).catch(e => {
-      tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">Servidor offline: ' + (e.message || 'conexao falhou') + '</td></tr>';
+      tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#aaa;padding:32px">Servidor offline: ' + (e.message || 'conexao falhou') + '</td></tr>';
     });
 }
-
-// ===================== CONFIGURACAO =====================
 function carregarConfig() {
   fetch('/api/config-email')
     .then(r=>r.json()).then(cfg => {
@@ -3371,6 +4120,401 @@ function toggleTema() {
     if (btn) btn.textContent = '☀️';
   }
 })();
+
+// ─── NOTIFICAÇÕES VISUAIS ───────────────────────────────────
+function toggleNotificacoes() {
+  const panel = document.getElementById('notif-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'block') renderNotificacoes();
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#notif-bell') && !e.target.closest('#notif-panel')) {
+    const p = document.getElementById('notif-panel');
+    if (p) p.style.display = 'none';
+  }
+});
+
+function renderNotificacoes() {
+  const notifs = [];
+  const contratos = getContratos();
+  const pagamentos = getPagamentos();
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+
+  contratos.forEach(c => {
+    if (c.active === 0) return;
+    const fim = new Date(c.fim + 'T12:00:00');
+    const diffDias = Math.ceil((fim - hoje) / (1000*60*60*24));
+    if (diffDias <= 0) {
+      notifs.push({ tipo: 'urgente', texto: `Contrato ${c.numero} VENCIDO`, icon: '&#9888;' });
+    } else if (diffDias <= 30) {
+      notifs.push({ tipo: 'alerta', texto: `Contrato ${c.numero} vence em ${diffDias} dia(s)`, icon: '&#9200;' });
+    }
+  });
+
+  pagamentos.filter(p => !p.dataPagamento).forEach(p => {
+    const venc = new Date(p.vencimento + 'T12:00:00');
+    const diffDias = Math.ceil((venc - hoje) / (1000*60*60*24));
+    if (diffDias < 0) {
+      notifs.push({ tipo: 'urgente', texto: `Pagamento "${p.descricao}" ATRASADO (venceu ${fmtData(p.vencimento)})`, icon: '&#9888;' });
+    } else if (diffDias <= 7) {
+      notifs.push({ tipo: 'alerta', texto: `Pagamento "${p.descricao}" vence em ${diffDias} dia(s)`, icon: '&#128176;' });
+    }
+  });
+
+  notifs.sort((a,b) => a.tipo === 'urgente' ? -1 : 1);
+
+  const badge = document.getElementById('notif-badge');
+  if (notifs.length > 0) {
+    badge.style.display = 'block';
+    badge.textContent = notifs.length > 99 ? '99+' : notifs.length;
+  } else {
+    badge.style.display = 'none';
+  }
+
+  const container = document.getElementById('notif-list');
+  if (!notifs.length) {
+    container.innerHTML = '<div style="padding:20px;text-align:center;color:#aaa;font-size:0.85rem;">Nenhuma notificação pendente.</div>';
+    return;
+  }
+
+  container.innerHTML = notifs.map(n => {
+    const bg = n.tipo === 'urgente' ? '#fdecea' : '#fef9e7';
+    const color = n.tipo === 'urgente' ? '#c0392b' : '#7d6608';
+    return `<div style="padding:10px 16px;border-bottom:1px solid #f0f0f0;background:${bg};font-size:0.85rem;color:${color};">
+      <span>${n.icon}</span> ${n.texto}
+    </div>`;
+  }).join('');
+}
+
+function checkNotificacoes() {
+  const contratos = getContratos();
+  const pagamentos = getPagamentos();
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  let count = 0;
+
+  contratos.forEach(c => {
+    if (c.active === 0) return;
+    const fim = new Date(c.fim + 'T12:00:00');
+    const diffDias = Math.ceil((fim - hoje) / (1000*60*60*24));
+    if (diffDias <= 30) count++;
+  });
+
+  pagamentos.filter(p => !p.dataPagamento).forEach(p => {
+    const venc = new Date(p.vencimento + 'T12:00:00');
+    const diffDias = Math.ceil((venc - hoje) / (1000*60*60*24));
+    if (diffDias <= 7) count++;
+  });
+
+  const badge = document.getElementById('notif-badge');
+  if (badge) {
+    if (count > 0) { badge.style.display = 'block'; badge.textContent = count > 99 ? '99+' : count; }
+    else { badge.style.display = 'none'; }
+  }
+}
+
+// ─── MINHA CONTA (ALTERAR SENHA) ─────────────────────────────
+function alterarMinhaSenha() {
+  const atual = document.getElementById('mc-senha-atual').value;
+  const nova = document.getElementById('mc-nova-senha').value;
+  const confirmar = document.getElementById('mc-confirmar-senha').value;
+  const msgEl = document.getElementById('mc-msg');
+
+  if (!atual || !nova || !confirmar) {
+    msgEl.style.display = 'block'; msgEl.style.background = '#fdecea'; msgEl.style.color = '#c0392b';
+    msgEl.textContent = 'Preencha todos os campos.';
+    return;
+  }
+  if (nova.length < 8) {
+    msgEl.style.display = 'block'; msgEl.style.background = '#fdecea'; msgEl.style.color = '#c0392b';
+    msgEl.textContent = 'A nova senha deve ter no minimo 8 caracteres.';
+    return;
+  }
+  if (!/[A-Z]/.test(nova) || !/[a-z]/.test(nova) || !/[0-9]/.test(nova)) {
+    msgEl.style.display = 'block'; msgEl.style.background = '#fdecea'; msgEl.style.color = '#c0392b';
+    msgEl.textContent = 'A senha deve conter pelo menos 1 maiuscula, 1 minuscula e 1 numero.';
+    return;
+  }
+  if (nova !== confirmar) {
+    msgEl.style.display = 'block'; msgEl.style.background = '#fdecea'; msgEl.style.color = '#c0392b';
+    msgEl.textContent = 'As senhas nao conferem.';
+    return;
+  }
+
+  fetch('/api/change-password', {
+    method: 'POST',
+    headers: csrfHeaders(),
+    body: JSON.stringify({ current_password: atual, new_password: nova })
+  }).then(r => r.json()).then(d => {
+    msgEl.style.display = 'block';
+    if (d.ok) {
+      msgEl.style.background = '#eafaf1'; msgEl.style.color = '#2e7d52';
+      msgEl.textContent = d.msg || 'Senha alterada com sucesso!';
+      document.getElementById('mc-senha-atual').value = '';
+      document.getElementById('mc-nova-senha').value = '';
+      document.getElementById('mc-confirmar-senha').value = '';
+    } else {
+      msgEl.style.background = '#fdecea'; msgEl.style.color = '#c0392b';
+      msgEl.textContent = d.erro || 'Erro ao alterar senha.';
+    }
+  }).catch(() => {
+    msgEl.style.display = 'block'; msgEl.style.background = '#fdecea'; msgEl.style.color = '#c0392b';
+    msgEl.textContent = 'Erro de conexao. Tente novamente.';
+  });
+}
+
+// ─── PAGINAÇÃO ──────────────────────────────────────────────
+const PAGE_SIZE = 25;
+let ctCurrentPage = 1;
+let pgCurrentPage = 1;
+
+function renderPagination(totalItems, currentPage, containerId, renderFn) {
+  const totalPages = Math.ceil(totalItems / PAGE_SIZE);
+  const container = document.getElementById(containerId);
+  if (!container || totalPages <= 1) { if (container) container.innerHTML = ''; return; }
+  
+  let html = '<div style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap;">';
+  html += `<button class="btn btn-sm" onclick="${renderFn}(${Math.max(1, currentPage-1)})" ${currentPage===1?'disabled':''}>Anterior</button>`;
+  
+  const start = Math.max(1, currentPage - 2);
+  const end = Math.min(totalPages, currentPage + 2);
+  if (start > 1) html += `<button class="btn btn-sm" onclick="${renderFn}(1)">1</button><span style="color:#888">...</span>`;
+  for (let i = start; i <= end; i++) {
+    html += `<button class="btn btn-sm ${i===currentPage?'btn-primary':''}" onclick="${renderFn}(${i})">${i}</button>`;
+  }
+  if (end < totalPages) html += `<span style="color:#888">...</span><button class="btn btn-sm" onclick="${renderFn}(${totalPages})">${totalPages}</button>`;
+  
+  html += `<button class="btn btn-sm" onclick="${renderFn}(${Math.min(totalPages, currentPage+1)})" ${currentPage===totalPages?'disabled':''}>Proximo</button>`;
+  html += `<span style="color:#888;font-size:0.8rem;margin-left:8px;">${totalItems} registro(s) - Pag ${currentPage}/${totalPages}</span>`;
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ─── EXPORTAÇÃO EXCEL (CSV) ─────────────────────────────────
+function _downloadCSV(csvContent, filename) {
+  const BOM = '\uFEFF';
+  const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+  mostrarToast('Arquivo exportado com sucesso!', 'sucesso');
+}
+
+function exportarContratosExcel() {
+  const empresas = getEmpresas();
+  const contratos = getContratos();
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const header = 'Nº Contrato;Empresa;Objeto;Fornecedor;CNPJ/CPF;Valor Total;Vigência Início;Vigência Fim;Status;Observações\n';
+  const rows = contratos.map(c => {
+    const fim = new Date(c.fim + 'T12:00:00');
+    const ativo = c.active !== 0 && fim >= hoje;
+    const status = c.active === 0 ? 'Inativo' : (ativo ? 'Ativo' : 'Vencido');
+    const emp = empresas.find(e => e.id === c.empresaId)?.nome || '';
+    return `"${c.numero || ''}";"${emp}";"${(c.objeto||'').replace(/"/g,'""')}";"${(c.parte||'').replace(/"/g,'""')}";"${c.cnpj||c.cpf||''}";"${c.valor||0}";"${c.inicio||''}";"${c.fim||''}";"${status}";"${(c.obs||'').replace(/"/g,'""')}"`;
+  }).join('\n');
+  _downloadCSV(header + rows, 'contratos_exportacao.csv');
+}
+
+function exportarPagamentosExcel() {
+  const contratos = getContratos();
+  const pagamentos = getPagamentos();
+  const empresas = getEmpresas();
+  const header = 'Contrato;Fornecedor;Empresa;Descrição;Vencimento;Valor;Data Pagamento;Valor Pago;Forma Pgto;Status\n';
+  const rows = pagamentos.map(p => {
+    const c = contratos.find(x => x.id === p.contratoId);
+    const emp = c ? (empresas.find(e => e.id === c.empresaId)?.nome || '') : '';
+    const forn = c ? c.parte : '';
+    const st = calcStatusPgto(p);
+    return `"${p.contratoNum||''}";"${(forn||'').replace(/"/g,'""')}";"${emp}";"${(p.descricao||'').replace(/"/g,'""')}";"${p.vencimento||''}";"${p.valor||0}";"${p.dataPagamento||''}";"${p.valorPago||''}";"${p.formaPagamento||''}";"${st}"`;
+  }).join('\n');
+  _downloadCSV(header + rows, 'pagamentos_exportacao.csv');
+}
+
+// ─── HISTÓRICO / AUDIT LOG ─────────────────────────────────
+function carregarHistorico() {
+  const container = document.getElementById('historico-content');
+  container.innerHTML = '<p style="color:#888;">Carregando...</p>';
+  
+  fetch('/api/audit?limit=50').then(r => r.json()).then(data => {
+    if (!data || !data.length) {
+      container.innerHTML = '<p style="color:#aaa;">Nenhum registro encontrado.</p>';
+      return;
+    }
+    const html = `<table style="width:100%;font-size:0.85rem;">
+      <thead><tr><th>Data/Hora</th><th>Usuário</th><th>Ação</th><th>Entidade</th><th>Detalhes</th></tr></thead>
+      <tbody>${data.map(l => {
+        const actionColors = {
+          'CREATE': '#27ae60', 'UPDATE': '#2980b9', 'DELETE': '#e74c3c',
+          'LOGIN': '#8e44ad', 'LOGOUT': '#8e44ad', 'PAYMENT': '#d4820a',
+          'ADDITIVE': '#16a085', 'CHANGE_PASSWORD': '#e67e22'
+        };
+        const color = actionColors[l.action] || '#555';
+        return `<tr style="border-bottom:1px solid #f0f0f0;">
+          <td style="white-space:nowrap;">${l.created_at || '—'}</td>
+          <td>${escapeHtml(l.user_name || '—')}</td>
+          <td><span style="color:${color};font-weight:bold;">${escapeHtml(l.action)}</span></td>
+          <td>${escapeHtml(l.entity || '—')} ${escapeHtml(l.entity_id || '')}</td>
+          <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(l.details || '')}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+    container.innerHTML = html;
+  }).catch(() => {
+    container.innerHTML = '<p style="color:#c0392b;">Erro ao carregar histórico.</p>';
+  });
+}
+
+// ─── OPERAÇÕES EM LOTE ────────────────────────────────────
+function toggleSelectAllPg(el) {
+  const checkboxes = document.querySelectorAll('.pg-checkbox');
+  checkboxes.forEach(cb => cb.checked = el.checked);
+  updateBatchBar();
+}
+
+function updateBatchBar() {
+  const selected = getSelectedPgIds();
+  const bar = document.getElementById('batch-bar');
+  const count = document.getElementById('batch-count');
+  if (selected.length > 0) {
+    bar.style.display = 'flex';
+    count.textContent = `${selected.length} pagamento(s) selecionado(s)`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function getSelectedPgIds() {
+  return Array.from(document.querySelectorAll('.pg-checkbox:checked')).map(cb => cb.value);
+}
+
+function limparSelecao() {
+  document.querySelectorAll('.pg-checkbox').forEach(cb => cb.checked = false);
+  const selectAll = document.getElementById('pg-select-all');
+  if (selectAll) selectAll.checked = false;
+  updateBatchBar();
+}
+
+function baixarSelecionados() {
+  const ids = getSelectedPgIds();
+  if (!ids.length) { mostrarToast('Nenhum pagamento selecionado.', 'alerta'); return; }
+  if (!confirm(`Deseja baixar ${ids.length} pagamento(s) selecionado(s)?`)) return;
+  let ok = 0, erro = 0;
+  ids.forEach(id => {
+    const p = getPagamentos().find(x => x.id === id);
+    if (p && calcStatusPgto(p) !== 'pago') {
+      const data = new Date().toISOString().slice(0,10);
+      p.dataPagamento = data;
+      p.valorPago = p.valor;
+      p.status = 'pago';
+      ok++;
+    } else { erro++; }
+  });
+  savePagamentos(getPagamentos());
+  syncToServer();
+  renderPagamentos();
+  limparSelecao();
+  mostrarToast(`${ok} pagamento(s) baixado(s).${erro ? ` ${erro} erro(s).` : ''}`, ok > 0 ? 'sucesso' : 'erro');
+}
+
+function estornarSelecionados() {
+  const ids = getSelectedPgIds();
+  if (!ids.length) { mostrarToast('Nenhum pagamento selecionado.', 'alerta'); return; }
+  if (!confirm(`Deseja estornar ${ids.length} pagamento(s) selecionado(s)?`)) return;
+  let ok = 0;
+  ids.forEach(id => {
+    const p = getPagamentos().find(x => x.id === id);
+    if (p && calcStatusPgto(p) === 'pago') {
+      p.dataPagamento = '';
+      p.valorPago = 0;
+      p.status = 'pendente';
+      p.formaPagamento = '';
+      p.comprovante = null;
+      ok++;
+    }
+  });
+  savePagamentos(getPagamentos());
+  syncToServer();
+  renderPagamentos();
+  limparSelecao();
+  mostrarToast(`${ok} pagamento(s) estornado(s).`, 'sucesso');
+}
+
+function excluirSelecionados() {
+  const ids = getSelectedPgIds();
+  if (!ids.length) { mostrarToast('Nenhum pagamento selecionado.', 'alerta'); return; }
+  if (!confirm(`ATENCAO: Deseja excluir ${ids.length} pagamento(s) selecionado(s)? Esta acao nao pode ser desfeita.`)) return;
+  let ok = 0;
+  ids.forEach(id => {
+    const idx = getPagamentos().findIndex(x => x.id === id);
+    if (idx >= 0) { getPagamentos().splice(idx, 1); ok++; }
+  });
+  savePagamentos(getPagamentos());
+  syncToServer();
+  renderPagamentos();
+  limparSelecao();
+  mostrarToast(`${ok} pagamento(s) excluido(s).`, 'sucesso');
+}
+
+// ─── PREVIEW PDF ────────────────────────────────────────────
+let _pdfPreviewData = null;
+let _pdfPreviewName = '';
+
+function previewAnexo(base64Data, fileName) {
+  _pdfPreviewData = base64Data;
+  _pdfPreviewName = fileName;
+  
+  if (fileName.toLowerCase().endsWith('.pdf')) {
+    document.getElementById('pdf-preview-title').textContent = fileName;
+    abrirModal('modal-pdf-preview');
+    return;
+  }
+  
+  if (/\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(fileName)) {
+    document.getElementById('pdf-preview-title').textContent = fileName;
+    const body = document.getElementById('pdf-preview-body');
+    body.innerHTML = `<div style="display:flex;justify-content:center;align-items:center;padding:16px;">
+      <img src="${base64Data}" style="max-width:100%;max-height:70vh;object-fit:contain;border-radius:4px;" />
+    </div>`;
+    abrirModal('modal-pdf-preview');
+  } else {
+    const link = document.createElement('a');
+    link.href = base64Data;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    mostrarToast('Arquivo baixado.', 'sucesso');
+  }
+}
+
+function abrirPdfNovaAba() {
+  if (!_pdfPreviewData) return;
+  const raw = _pdfPreviewData.replace(/^data:[^;]*;base64,/, '');
+  const binary = atob(raw);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], {type: 'application/pdf'});
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+function baixarPdfPreview() {
+  if (_pdfPreviewData && _pdfPreviewName) downloadBase64(_pdfPreviewData, _pdfPreviewName);
+}
+
+function imprimirPdfPreview() {
+  if (!_pdfPreviewData) return;
+  const raw = _pdfPreviewData.replace(/^data:[^;]*;base64,/, '');
+  const binary = atob(raw);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], {type: 'application/pdf'});
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank');
+  if (w) { setTimeout(() => { try { w.print(); } catch(e) {} }, 2000); }
+}
 
 // ─── ASSISTENTE VIRTUAL ──────────────────────────────────
 function toggleChat() {

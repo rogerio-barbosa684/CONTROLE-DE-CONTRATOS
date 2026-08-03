@@ -1,4 +1,4 @@
-import os, re, sqlite3, uuid, calendar, smtplib, ssl, json, traceback, html, base64, secrets, socket, ipaddress, logging, io, requests
+import os, re, sqlite3, uuid, calendar, smtplib, ssl, json, traceback, html, base64, secrets, socket, ipaddress, logging, io, requests, time
 from datetime import datetime, date, timedelta
 from email.mime.text import MIMEText
 from flask import (Flask, request, session, g, send_from_directory, jsonify, abort)
@@ -298,6 +298,28 @@ def init_db():
         empresa_ids TEXT DEFAULT '[]',
         criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
     );
+    CREATE TABLE IF NOT EXISTS password_resets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token TEXT UNIQUE NOT NULL,
+        expires_at TEXT NOT NULL,
+        used INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+    CREATE TABLE IF NOT EXISTS sectors (
+        id TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS user_setores (
+        user_id INTEGER NOT NULL,
+        setor_id TEXT NOT NULL,
+        PRIMARY KEY (user_id, setor_id),
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (setor_id) REFERENCES sectors(id)
+    );
     """)
     for col, tbl in [
         ('arquivo_contrato', 'contracts'), ('tipo', 'contracts'), ('empresa_id', 'contracts'), ('forma_pagamento', 'contracts'),
@@ -336,6 +358,14 @@ def init_db():
         print("[SEGURANCA] Senha do admin atualizada via ADMIN_PASSWORD do .env")
     elif admin_exists:
         print("[INFO] Admin ja existe. Para alterar a senha, defina ADMIN_PASSWORD no .env e reinicie.")
+
+    # Cria setores padrao se nao existirem
+    default_setores = ['Financeiro', 'RH', 'Juridico', 'Administrativo', 'TI', 'Comercial', 'Operacional', 'Fiscal']
+    existing = query_db("SELECT id FROM sectors")
+    if not existing:
+        for nome in default_setores:
+            execute_db("INSERT INTO sectors (id, nome) VALUES (?, ?)", (str(uuid.uuid4()), nome))
+        print(f"[INFO] {len(default_setores)} setores padrao criados.")
 
     # Limpa audit_log com mais de 1 ano
     try:
@@ -479,6 +509,36 @@ def api_me():
     user = query_db("SELECT id, username, full_name, role FROM users WHERE id=?", (session['user_id'],), one=True)
     return jsonify({"ok": True, "user": user, "csrf_token": generate_csrf_token()})
 
+@app.route('/api/change-password', methods=['POST'])
+def api_change_password():
+    if 'user_id' not in session:
+        return jsonify({"ok": False, "erro": "Nao autenticado"}), 401
+    if not validate_csrf():
+        return jsonify({"ok": False, "erro": "CSRF invalido"}), 403
+    data = request.json or {}
+    current_password = data.get('current_password') or ''
+    new_password = data.get('new_password') or ''
+    if not current_password or not new_password:
+        return jsonify({"ok": False, "erro": "Senha atual e nova senha sao obrigatorias."}), 400
+    user = query_db("SELECT id, password_hash FROM users WHERE id=?", (session['user_id'],), one=True)
+    if not user:
+        return jsonify({"ok": False, "erro": "Usuario nao encontrado."}), 404
+    if not check_password(user['password_hash'], current_password):
+        return jsonify({"ok": False, "erro": "Senha atual incorreta."}), 400
+    if len(new_password) < 8:
+        return jsonify({"ok": False, "erro": "A nova senha deve ter no minimo 8 caracteres."}), 400
+    if not re.search(r'[A-Z]', new_password):
+        return jsonify({"ok": False, "erro": "Nova senha deve conter pelo menos 1 letra maiuscula."}), 400
+    if not re.search(r'[a-z]', new_password):
+        return jsonify({"ok": False, "erro": "Nova senha deve conter pelo menos 1 letra minuscula."}), 400
+    if not re.search(r'[0-9]', new_password):
+        return jsonify({"ok": False, "erro": "Nova senha deve conter pelo menos 1 numero."}), 400
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    execute_db("UPDATE users SET password_hash=?, password_changed_at=? WHERE id=?",
+               (hash_password(new_password), now, session['user_id']))
+    audit('change_password', 'user', str(session['user_id']), 'Senha alterada pelo proprio usuario')
+    return jsonify({"ok": True, "msg": "Senha alterada com sucesso!"})
+
 login_attempts = {}
 
 # ─── CSRF ────────────────────────────────────────────────────────────────────
@@ -537,6 +597,23 @@ def api_logout():
     return jsonify({"ok": True})
 
 # ─── API DE SINCRONIA ───────────────────────────────────────────────────────
+
+# ─── API DE HISTÓRICO / AUDIT LOG ──────────────────────────────────────────
+
+@app.route('/api/audit', methods=['GET'])
+def api_audit_list():
+    if 'user_id' not in session:
+        return jsonify({"ok": False, "erro": "Nao autenticado"}), 401
+    limit = min(int(request.args.get('limit', 50)), 200)
+    logs = query_db(
+        """SELECT a.id, a.action, a.entity, a.entity_id, a.details, a.created_at,
+                  u.username as user_name
+           FROM audit_log a
+           LEFT JOIN users u ON a.user_id = u.id
+           ORDER BY a.id DESC LIMIT ?""",
+        (limit,)
+    )
+    return jsonify([dict(l) for l in logs])
 
 # ─── API DE USUARIOS ──────────────────────────────────────────────────────
 
@@ -684,7 +761,11 @@ def api_sync_get():
         val = e.get('active')
         e['active'] = 1 if val is not None and val != 0 and val != '0' else 0
     destinatarios = query_db("SELECT * FROM destinatarios ORDER BY criado_em ASC")
-    return jsonify({"contratos": contratos, "pagamentos": pagamentos, "usuarios": usuarios, "aditivos": aditivos, "empresas": empresas, "destinatarios": destinatarios})
+    sectors = query_db("SELECT * FROM sectors ORDER BY nome ASC")
+    for s in sectors:
+        val = s.get('active')
+        s['active'] = 1 if val is not None and val != 0 and val != '0' else 0
+    return jsonify({"contratos": contratos, "pagamentos": pagamentos, "usuarios": usuarios, "aditivos": aditivos, "empresas": empresas, "destinatarios": destinatarios, "sectors": sectors})
 
 @app.route('/api/sync', methods=['POST'])
 def api_sync_post():
@@ -814,6 +895,20 @@ def api_sync_post():
                        (did, email, nome, json.dumps(empresa_ids, ensure_ascii=False)))
         importados["destinatarios"] = importados.get("destinatarios", 0) + 1
 
+    for s in dados.get("sectors", []):
+        sid = (s.get("id") or "").strip()
+        nome = (s.get("nome") or "").strip()
+        if not sid or not nome:
+            importados["ignorados"] += 1
+            continue
+        active = 1 if s.get("active") not in (0, '0', False, None) else 0
+        existing = query_db("SELECT id FROM sectors WHERE id=?", (sid,), one=True)
+        if existing:
+            execute_db("UPDATE sectors SET nome=?, active=? WHERE id=?", (nome, active, sid))
+        else:
+            execute_db("INSERT INTO sectors (id, nome, active) VALUES (?,?,?)", (sid, nome, active))
+        importados["sectors"] = importados.get("sectors", 0) + 1
+
     audit("SYNC", "system", "", f"Sincronizacao concluida: {importados}")
     return jsonify({"ok": True, "importados": importados})
 
@@ -879,6 +974,64 @@ def api_modify_company(cid):
         execute_db(f"UPDATE companies SET {', '.join(f'{k}=?' for k in upd)} WHERE id=?", (*upd.values(), cid))
     return jsonify({"ok": True})
 
+# ─── API DE SETORES ──────────────────────────────────────────────────────
+
+@app.route('/api/sectors', methods=['GET', 'POST'])
+def api_sectors():
+    if request.method == 'GET':
+        sectors = query_db("SELECT * FROM sectors ORDER BY nome ASC")
+        for s in sectors:
+            val = s.get('active')
+            s['active'] = 1 if val is not None and val != 0 and val != '0' else 0
+        return jsonify(sectors)
+    if not validate_csrf():
+        return jsonify({"ok": False, "erro": "CSRF invalido"}), 403
+    if 'user_id' not in session:
+        return jsonify({"ok": False, "erro": "Nao autenticado"}), 401
+    admin_err = require_admin()
+    if admin_err:
+        return admin_err
+    dados = request.get_json(silent=True)
+    if not dados:
+        return jsonify({"ok": False, "erro": "JSON invalido."}), 400
+    sid = dados.get('id') or str(uuid.uuid4())
+    nome = (dados.get('nome') or '').strip()
+    if not nome:
+        return jsonify({"ok": False, "erro": "Nome do setor e obrigatorio."}), 400
+    active = dados.get('active')
+    existing = query_db("SELECT id FROM sectors WHERE id=?", (sid,), one=True)
+    if existing:
+        if active is not None:
+            execute_db("UPDATE sectors SET nome=?, active=? WHERE id=?", (nome, 1 if active not in (0, '0', False, None) else 0, sid))
+        else:
+            execute_db("UPDATE sectors SET nome=? WHERE id=?", (nome, sid))
+    else:
+        execute_db("INSERT INTO sectors (id, nome, active) VALUES (?,?,?)", (sid, nome, 1 if active is None or active not in (0, '0', False, None) else 0))
+    return jsonify({"ok": True, "id": sid})
+
+@app.route('/api/sectors/<sid>', methods=['PUT', 'DELETE'])
+def api_modify_sector(sid):
+    if not validate_csrf():
+        return jsonify({"ok": False, "erro": "CSRF invalido"}), 403
+    if 'user_id' not in session:
+        return jsonify({"ok": False, "erro": "Nao autenticado"}), 401
+    if request.method == 'DELETE':
+        admin_err = require_admin()
+        if admin_err:
+            return admin_err
+        execute_db("DELETE FROM sectors WHERE id=?", (sid,))
+        execute_db("DELETE FROM user_setores WHERE setor_id=?", (sid,))
+        return jsonify({"ok": True})
+    dados = request.get_json(silent=True) or {}
+    upd = {}
+    if 'active' in dados:
+        upd['active'] = 1 if dados['active'] not in (0, '0', False, None) else 0
+    if 'nome' in dados:
+        upd['nome'] = (dados['nome'] or '').strip()
+    if upd:
+        execute_db(f"UPDATE sectors SET {', '.join(f'{k}=?' for k in upd)} WHERE id=?", (*upd.values(), sid))
+    return jsonify({"ok": True})
+
 # ─── API DE E-MAIL / LEMBRETE ───────────────────────────────────────────────
 
 def ler_config():
@@ -939,6 +1092,93 @@ def api_config_email():
     if cfg.get('email_senha_enc'):
         cfg['email_senha'] = '********'
     return jsonify(cfg)
+
+# ─── FORGOT / RESET PASSWORD ────────────────────────────────────────────────
+
+_forgot_password_attempts = {}
+
+def _check_forgot_rate_limit(ip):
+    now = time.time()
+    attempts = _forgot_password_attempts.get(ip, [])
+    attempts = [t for t in attempts if now - t < 60]
+    _forgot_password_attempts[ip] = attempts
+    if len(attempts) >= 5:
+        return False
+    attempts.append(now)
+    return True
+
+@app.route('/api/forgot-password', methods=['POST'])
+def api_forgot_password():
+    client_ip = request.remote_addr or 'unknown'
+    if not _check_forgot_rate_limit(client_ip):
+        return jsonify({"ok": False, "erro": "Muitas tentativas. Aguarde 1 minuto."}), 429
+    data = request.json or {}
+    username = (data.get('username') or '').strip()
+    if not username:
+        return jsonify({"ok": False, "erro": "Informe o nome de usuario."}), 400
+    user = query_db("SELECT id, username, full_name, email FROM users WHERE username=?", (username,), one=True)
+    if not user:
+        return jsonify({"ok": True, "msg": "Se o usuario existir, um email sera enviado."})
+    token = secrets.token_hex(32)
+    expires_at = (datetime.now() + timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
+    execute_db("DELETE FROM password_resets WHERE user_id=?", (user['id'],))
+    execute_db(
+        "INSERT INTO password_resets (user_id, token, expires_at) VALUES (?, ?, ?)",
+        (user['id'], token, expires_at)
+    )
+    cfg = {}
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+        if cfg.get('email_senha_enc'):
+            cfg['email_senha'] = decrypt_text(cfg['email_senha_enc'])
+    email_to = user.get('email') or cfg.get('email_remetente')
+    if cfg.get('email_remetente') and cfg.get('email_senha') and email_to:
+        host = request.host or 'localhost:5000'
+        scheme = 'https' if os.environ.get('HTTPS') == '1' else 'http'
+        reset_url = f"{scheme}://{host}/?reset_token={token}"
+        html = f"""
+        <h2>Redefinição de Senha</h2>
+        <p>Olá {html.escape(user['full_name'] or user['username'])},</p>
+        <p>Clique no link abaixo para redefinir sua senha:</p>
+        <p><a href="{reset_url}">{reset_url}</a></p>
+        <p>Este link expira em 1 hora.</p>
+        <p>Se você não solicitou esta redefinição, ignore este email.</p>
+        """
+        try:
+            enviar_email(cfg, html, 'Redefinição de Senha - Controle de Contratos', email_to)
+        except Exception as e:
+            app.logger.warning("Erro ao enviar email de redefinicao: %s", e)
+    return jsonify({"ok": True, "msg": "Se o usuario existir, um email sera enviado."})
+
+@app.route('/api/reset-password', methods=['POST'])
+def api_reset_password():
+    data = request.json or {}
+    token = (data.get('token') or '').strip()
+    password = data.get('password') or ''
+    if not token or not password:
+        return jsonify({"ok": False, "erro": "Token e nova senha sao obrigatorios."}), 400
+    if len(password) < 8:
+        return jsonify({"ok": False, "erro": "A senha deve ter no minimo 8 caracteres."}), 400
+    if not re.search(r'[A-Z]', password):
+        return jsonify({"ok": False, "erro": "Senha deve conter pelo menos 1 letra maiuscula."}), 400
+    if not re.search(r'[a-z]', password):
+        return jsonify({"ok": False, "erro": "Senha deve conter pelo menos 1 letra minuscula."}), 400
+    if not re.search(r'[0-9]', password):
+        return jsonify({"ok": False, "erro": "Senha deve conter pelo menos 1 numero."}), 400
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    reset = query_db(
+        "SELECT id, user_id, expires_at FROM password_resets WHERE token=? AND used=0",
+        (token,), one=True
+    )
+    if not reset:
+        return jsonify({"ok": False, "erro": "Token invalido ou ja utilizado."}), 400
+    if reset['expires_at'] < now:
+        return jsonify({"ok": False, "erro": "Token expirado. Solicite uma nova redefinicao."}), 400
+    execute_db("UPDATE users SET password_hash=?, password_changed_at=? WHERE id=?",
+               (hash_password(password), now, reset['user_id']))
+    execute_db("UPDATE password_resets SET used=1 WHERE id=?", (reset['id'],))
+    return jsonify({"ok": True, "msg": "Senha redefinida com sucesso!"})
 
 def processar_pagamentos(contratos, pagamentos, hoje, empresa_nomes=None):
     if empresa_nomes is None:
@@ -1473,10 +1713,10 @@ O sistema e uma aplicacao web para gerenciar contratos, pagamentos e vencimentos
 
 TELAS PRINCIPAIS:
 1. DASHBOARD - Tela inicial com resumo: cards com totais, proximos vencimentos e contratos ativos. Permite filtrar por fornecedor/CNPJ/CPF e data de vencimento.
-2. CONTRATOS - Lista todos os contratos cadastrados. Permite buscar, editar, excluir e ver detalhes.
+2. CONTRATOS - Lista todos os contratos cadastrados. Permite buscar, editar, excluir e ver detalhes. Tem filtros avancados e exportacao Excel.
 3. NOVO CONTRATO - Formulario para cadastrar um novo contrato com todos os dados.
-4. PAGAMENTOS - Lista todas as parcelas/pagamentos. Permite filtrar por contrato e status, registrar pagamentos e anexar comprovantes.
-5. CONFIGURACAO - Sub-menu com: Usuarios, Empresas, Tipos de Servico, Destinatarios de E-mail, E-mail (SMTP), Informacoes do Sistema.
+4. PAGAMENTOS - Lista todas as parcelas/pagamentos. Permite filtrar por contrato, status, periodo e valor. Registra pagamentos, anexa comprovantes e tem operacoes em lote.
+5. CONFIGURACAO - Sub-menu com: Minha Conta, Usuarios, Empresas, Tipos de Servico, Destinatarios de E-mail, E-mail (SMTP), Historico, Informacoes do Sistema.
 
 COMO CADASTRAR UM CONTRATO:
 1. Clique em "+ Novo Contrato" no menu
@@ -1487,34 +1727,43 @@ COMO CADASTRAR UM CONTRATO:
 
 COMO REGISTRAR UM PAGAMENTO:
 1. Va em "Pagamentos"
-2. Clique no botao "Registrar" ao lado do pagamento pendente
+2. Clique no botao "Baixar" ao lado do pagamento pendente
 3. Informe: Data do Pagamento, Valor Pago, Forma de Pagamento
 4. Opcionalmente anexe o comprovante (imagem ou PDF)
 5. Confirme
+6. Para baixar varios de uma vez, marque os checkboxes e clique em "Baixar Selecionados"
 
 COMO EDITAR UM CONTRATO:
 1. Va em "Contratos"
-2. Clique no icone de editar (lapis) ao lado do contrato
+2. Clique no botao "Editar" ao lado do contrato
 3. Altere os dados necessarios
 4. Salve
 
 COMO ADICIONAR ADITIVO:
 1. Abra o detalhe do contrato
-2. Clique em "Registrar Aditivo"
+2. Clique em "Adit"
 3. Preencha: Numero do Aditivo, Data, Tipo, Nova Data de Fim e/ou Acrescimo de Valor
 4. Salve
 
-RECURSOS:
-- Tema claro/escuro: clique no icone da lua/sol no header
-- Alertas automaticos por e-mail para contratos proximos do vencimento
+RECURSOS AVANCADOS:
+- Filtros avancados: por fornecedor, status, periodo e valor nas telas de Contratos e Pagamentos
+- Exportacao Excel: botao "Exportar Excel" nas telas de Contratos e Pagamentos
+- Paginacao: 25 registros por pagina nas listas
+- Preview de PDF/Imagens: clique em "Ver" para visualizar anexos sem baixar
+- Impressao: disponivel no modal de preview de anexos
+- Operacoes em lote: selecione varios pagamentos e baixe, estorne ou exclua de uma vez
+- Notificacoes: sino no canto superior direito com alertas de vencimentos
+- Alteracao de senha: Configuracao > Minha Conta
+- Historico de acoes: Configuracao > Historico mostra quem fez o que e quando
 - Resumo de contratos via IA (Gemini) quando ha arquivo PDF anexado
-- CNPJ/CPF com validacao automatica
-- Controle de acesso por empresa (cada usuario so ve contratos das empresas que tem acesso)
+- Tema claro/escuro: clique no icone da lua/sol no header
+- Atalhos: Enter no login para entrar, Esc para fechar modais
 
 Dicas:
 - Preencha sempre o CNPJ/CPF do fornecedor para facilitar buscas
-- Use os filtros no dashboard para ver vencimentos proximos
+- Use os filtros para encontrar contratos e pagamentos rapidamente
 - Configure o e-mail SMTP para receber alertas automaticos
+- Use operacoes em lote para ganhar produtividade
 - Cadastre os tipos de servico antes de criar contratos
 
 Se o usuario perguntar algo fora do escopo do sistema, redirecione gentilmente para o tema. Seja prestativo e amigavel."""
@@ -1558,20 +1807,22 @@ def _resposta_offline(pergunta):
                 "Preencha os campos obrigatorios (Numero, Tipo, Empresa, Objeto, Fornecedor, Valor, Datas) "
                 "e salve. Se tiver pagamentos, marque a checkbox e preencha as parcelas.")
     if any(w in p for w in ['pagamento', 'parcela', 'pay']):
-        return ("Para registrar um pagamento, va em 'Pagamentos', clique em 'Registrar' ao lado "
-                "do pagamento pendente, informe data, valor e forma de pagamento, e confirme.")
+        return ("Para registrar um pagamento, va em 'Pagamentos', clique em 'Baixar' ao lado "
+                "do pagamento pendente, informe data, valor e forma de pagamento, e confirme. "
+                "Voce pode selecionar varios pagamentos e baixar em lote usando os checkboxes.")
     if any(w in p for w in ['editar', 'alterar', 'mudar']):
-        return ("Para editar, va em 'Contratos', clique no icone de editar (lapis) ao lado do contrato, "
+        return ("Para editar, va em 'Contratos', clique no botao 'Editar' ao lado do contrato, "
                 "altere os dados e salve.")
     if any(w in p for w in ['aditivo', 'prorrog', 'acresc']):
-        return ("Para adicionar um aditivo, abra o detalhe do contrato e clique em 'Registrar Aditivo'. "
+        return ("Para adicionar um aditivo, abra o detalhe do contrato e clique em 'Adit'. "
                 "Informe o numero, data, tipo (Prazo/Valor/Ambos) e os novos dados.")
     if any(w in p for w in ['email', 'smtp', 'alerta', 'lembrete']):
         return ("Configure o e-mail em Configuracao > E-mail. Informe servidor SMTP, porta, email remetente e senha. "
                 "Depois clique em 'Enviar Lembrete' ou 'Enviar Alertas' para notificar.")
     if any(w in p for w in ['usuario', 'senha', 'login', 'acesso']):
         return ("Para gerenciar usuarios, va em Configuracao > Usuarios. La voce pode criar, editar "
-                "ou excluir usuarios, definir perfil (admin/usuario) e quais empresas tem acesso.")
+                "ou excluir usuarios, definir perfil (admin/usuario) e quais empresas tem acesso. "
+                "Para alterar sua propria senha, va em Configuracao > Minha Conta.")
     if any(w in p for w in ['empresa', 'cnpj']):
         return ("Para cadastrar empresas, va em Configuracao > Empresas. Informe o nome e CNPJ. "
                 "As empresas sao vinculadas aos contratos e aos usuarios.")
@@ -1580,9 +1831,36 @@ def _resposta_offline(pergunta):
                 "Use os filtros por fornecedor/CNPJ e data de vencimento.")
     if any(w in p for w in ['tema', 'escuro', 'claro', 'dark']):
         return ("Para mudar o tema, clique no icone da lua/sol no canto superior direito do header.")
+    if any(w in p for w in ['filtro', 'filtrar', 'buscar', 'procurar']):
+        return ("Na tela de Contratos, use os filtros por Fornecedor, Status, Periodo e Valor. "
+                "Na tela de Pagamentos, pode filtrar por Contrato, Status, Periodo e Valor tambem.")
+    if any(w in p for w in ['excel', 'exportar', 'planilha', 'csv']):
+        return ("Para exportar para Excel, va em Contratos ou Pagamentos e clique no botao 'Exportar Excel' "
+                "no topo da pagina. O arquivo sera baixado em formato CSV compativel com Excel.")
+    if any(w in p for w in ['senha', 'trocar', 'alterar senha', 'minha conta']):
+        return ("Para alterar sua senha, va em Configuracao > Minha Conta. "
+                "Informe a senha atual e a nova senha (min. 8 caracteres, 1 maiuscula, 1 minuscula, 1 numero).")
+    if any(w in p for w in ['notificac', 'sino', 'alerta visual']):
+        return ("O sino de notificacoes no canto superior direito mostra alertas de contratos vencendo "
+                "e pagamentos atrasados. Clique nele para ver os detalhes.")
+    if any(w in p for w in ['pdf', 'anexo', 'visualizar', 'preview']):
+        return ("Para visualizar um anexo, clique em 'Ver' na coluna Anexo de Contratos ou Pagamentos. "
+                "O PDF ou imagem sera aberto num modal. Voce pode baixar ou imprimir diretamente de la.")
+    if any(w in p for w in ['lote', 'varios', 'selecionar']):
+        return ("Na tela de Pagamentos, marque os checkboxes ao lado de cada pagamento para selecionar varios. "
+                "Depois use os botoes: Baixar Selecionados, Estornar Selecionados ou Excluir Selecionados.")
+    if any(w in p for w in ['historico', 'log', 'auditoria', 'registro']):
+        return ("Para ver o historico de acoes, va em Configuracao > Historico. "
+                "La voce ve quem fez o que e quando (criar, editar, excluir, login, etc).")
+    if any(w in p for w in ['resumo', 'ia', 'inteligencia', 'artificial']):
+        return ("Para gerar o resumo com IA, abra o detalhe do contrato e clique em 'Gerar Resumo com IA'. "
+                "Se ja existir um resumo, o botao aparece como 'Regenerar Resumo com IA'.")
+    if any(w in p for w in ['enter', 'esc', 'atalho', 'tecla']):
+        return ("Atalhos disponiveis: pressione Enter nos campos de Usuario ou Senha para fazer login. "
+                "Pressione Esc para fechar qualquer tela/modal aberta.")
     return ("Posso ajudar com: cadastro de contratos, pagamentos, aditivos, empresas, usuarios, "
-            "configuracao de e-mail, uso do dashboard e navegacao no sistema. "
-            "Faca sua pergunta!")
+            "filtros, exportacao Excel, notificacoes, historico, alteracao de senha, "
+            "visualizacao de PDF, operacoes em lote e mais. Faca sua pergunta!")
 
 # ─── INICIALIZAÇÃO ───────────────────────────────────────────────────────────
 
