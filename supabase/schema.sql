@@ -123,6 +123,42 @@ CREATE TABLE IF NOT EXISTS email_config (
   email_destinatario TEXT DEFAULT ''
 );
 
+-- Certidoes (Controle de Regularidade)
+CREATE TABLE IF NOT EXISTS certidoes (
+  id TEXT PRIMARY KEY,
+  empresa_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL,
+  data_emissao TEXT,
+  data_validade TEXT,
+  status TEXT NOT NULL DEFAULT 'pendente',
+  arquivo TEXT,
+  obs TEXT,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (now()::text),
+  updated_at TEXT
+);
+
+-- Licitacoes (Contratos de Licitacoes)
+CREATE TABLE IF NOT EXISTS licitacoes (
+  id TEXT PRIMARY KEY,
+  numero_licitacao TEXT NOT NULL,
+  edital TEXT,
+  objeto TEXT NOT NULL,
+  empresa_id TEXT REFERENCES companies(id) ON DELETE SET NULL,
+  contrato_id TEXT REFERENCES contracts(id) ON DELETE SET NULL,
+  valor REAL NOT NULL DEFAULT 0,
+  data_homologacao TEXT,
+  data_inicio TEXT,
+  data_fim TEXT,
+  status TEXT NOT NULL DEFAULT 'em_andamento',
+  arquivo_edital TEXT,
+  arquivo_contrato TEXT,
+  obs TEXT,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (now()::text),
+  updated_at TEXT
+);
+
 -- Insert initial admin user (password will be set by the API on first run)
 INSERT INTO users (username, full_name, password_hash, role)
 VALUES ('admin', 'Administrador', '$2b$12$placeholder', 'admin')
