@@ -3,9 +3,23 @@ import jwt from 'jsonwebtoken'
 import nodemailer from 'nodemailer'
 import crypto from 'crypto'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'contratos_jwt_secret_2026_ideal_alimentacao'
+const JWT_SECRET = process.env.JWT_SECRET
 
 const forgotPasswordAttempts = new Map()
+const loginAttempts = new Map()
+
+function checkLoginRateLimit(ip) {
+  const now = Date.now()
+  const windowMs = 60 * 1000
+  const maxAttempts = 10
+  const record = loginAttempts.get(ip)
+  if (!record || (now - record.start) > windowMs) {
+    loginAttempts.set(ip, { start: now, count: 1 })
+    return true
+  }
+  record.count++
+  return record.count <= maxAttempts
+}
 function checkForgotPasswordRateLimit(ip) {
   const now = Date.now()
   const windowMs = 60 * 1000
@@ -23,8 +37,11 @@ function checkForgotPasswordRateLimit(ip) {
 let _supabase = null
 function getSupabase() {
   if (_supabase) return _supabase
-  const url = process.env.SUPABASE_URL || 'https://pgehubucomamrmdgpvhn.supabase.co'
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || 'sb_secret_HRHEyYIEUW0BK7-ZOAS9rA_OQiyyfLm'
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) {
+    throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY devem estar configurados nas variaveis de ambiente do Netlify.')
+  }
   _supabase = createClient(url, key)
   return _supabase
 }
@@ -438,20 +455,6 @@ export async function handler(event) {
   const parts = route.split('/')
 
   try {
-    // ─── INIT-ADMIN (temporario - criar admin com pbkdf2) ────────────────
-    if (route === 'init-admin' && httpMethod === 'POST') {
-      const hash = await hashPassword('Admin@123456')
-      const { data: existing } = await getSupabase().from('users').select('id').eq('username', 'admin').single()
-      if (existing) {
-        await getSupabase().from('users').update({ password_hash: hash }).eq('username', 'admin')
-        return json({ ok: true, msg: 'Admin atualizado', hash })
-      } else {
-        const { error } = await getSupabase().from('users').insert({ username: 'admin', full_name: 'Administrador', password_hash: hash, role: 'admin', active: 1 })
-        if (error) return json({ ok: false, erro: error.message }, 500)
-        return json({ ok: true, msg: 'Admin criado', hash })
-      }
-    }
-
     // ─── CSRF TOKEN ──────────────────────────────────────────────────────
     if (route === 'csrf-token' && httpMethod === 'GET') {
       return json({ csrf_token: csrfToken })
@@ -466,6 +469,13 @@ export async function handler(event) {
 
     // ─── LOGIN ───────────────────────────────────────────────────────────
     if (route === 'login' && httpMethod === 'POST') {
+      const clientIp = headers['x-forwarded-for'] || headers['client-ip'] || 'unknown'
+      if (!checkLoginRateLimit(clientIp)) {
+        return json({ ok: false, erro: 'Muitas tentativas. Aguarde 1 minuto.' }, 429)
+      }
+      if (!JWT_SECRET) {
+        return json({ ok: false, erro: 'JWT_SECRET nao configurado no servidor.' }, 500)
+      }
       const { username, password } = body
       const { data: dbUser } = await getSupabase().from('users').select('*').eq('username', username).eq('active', 1).single()
       if (!dbUser || !(await checkPassword(password, dbUser.password_hash))) {
@@ -1018,7 +1028,6 @@ export async function handler(event) {
 
     // ─── ASSISTENTE VIRTUAL ─────────────────────────────────────────────────
     if (route === 'assistente' && httpMethod === 'POST') {
-      const body = await readBody(event)
       const pergunta = (body.pergunta || '').trim()
       if (!pergunta) return json({ ok: false, erro: 'Pergunta vazia' }, 400)
 

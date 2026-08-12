@@ -9,6 +9,47 @@
   to = "/.netlify/functions/api"
   status = 200
 
+# Bloqueia arquivos sensiveis que nao podem ser servidos como estatico
+[[redirects]]
+  from = "/*.py"
+  to = "/404"
+  status = 404
+
+[[redirects]]
+  from = "/*.db"
+  to = "/404"
+  status = 404
+
+[[redirects]]
+  from = "/*.pem"
+  to = "/404"
+  status = 404
+
+[[redirects]]
+  from = "/*.key"
+  to = "/404"
+  status = 404
+
+[[redirects]]
+  from = "/config_email.json"
+  to = "/404"
+  status = 404
+
+[[redirects]]
+  from = "/dados.json"
+  to = "/404"
+  status = 404
+
+[[redirects]]
+  from = "/backup_supabase.js"
+  to = "/404"
+  status = 404
+
+[[redirects]]
+  from = "/admin_initial_password.txt"
+  to = "/404"
+  status = 404
+
 [[headers]]
   for = "/*"
   [headers.values]

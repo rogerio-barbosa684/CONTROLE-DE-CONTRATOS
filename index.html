@@ -1469,7 +1469,7 @@
     <div id="config-sub-destinatarios" class="config-section">
       <div class="card">
         <h2>Destinatários de E-mail</h2>
-        <p style="margin-bottom:16px;color:#666;font-size:0.9rem;">Cadastre e-mails que receberão alertas de contratos. Cada destinatário pode ser vinculado a uma ou mais empresas e receberá apenas os alertas dos contratos daquelas empresas.</p>
+        <p style="margin-bottom:16px;color:#666;font-size:0.9rem;">Cadastre e-mails que receberão os alertas. Marque quais tipos de alerta cada destinatário deseja receber (Contratos, Pagamentos, Certidões, Licitações). Você também pode restringir por empresas e setores.</p>
         <div id="destinatario-form" style="display:flex;gap:8px;margin-bottom:16px;align-items:end;flex-wrap:wrap;">
           <div class="form-group" style="flex:1;min-width:200px;">
             <label>E-mail *</label>
@@ -1483,13 +1483,26 @@
             <label>Empresas vinculadas</label>
             <div id="dest-empresas-checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0;"></div>
           </div>
+          <div class="form-group" style="flex:1;min-width:200px;">
+            <label>Setores (para alertas de Certidões/Licitações)</label>
+            <div id="dest-setores-checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0;"></div>
+          </div>
+          <div class="form-group" style="flex:1;min-width:260px;">
+            <label>Receber alertas de</label>
+            <div id="dest-alertas-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px;padding:6px 0;">
+              <label style="font-size:0.82rem;"><input type="checkbox" value="contratos" checked/> Contratos</label>
+              <label style="font-size:0.82rem;"><input type="checkbox" value="pagamentos" checked/> Pagamentos</label>
+              <label style="font-size:0.82rem;"><input type="checkbox" value="certidoes" checked/> Certidões</label>
+              <label style="font-size:0.82rem;"><input type="checkbox" value="licitacoes" checked/> Licitações</label>
+            </div>
+          </div>
           <button class="btn btn-primary" id="btn-salvar-dest" onclick="salvarDestinatario()" style="margin-bottom:1px;">Adicionar</button>
         </div>
         <div id="dest-form-edit-id" style="display:none;"></div>
         <div style="overflow-x:auto">
           <table>
             <thead>
-              <tr><th>E-mail</th><th>Nome</th><th>Empresas Vinculadas</th><th>Ações</th></tr>
+              <tr><th>E-mail</th><th>Nome</th><th>Alertas</th><th>Empresas Vinculadas</th><th>Setores</th><th>Ações</th></tr>
             </thead>
             <tbody id="tb-destinatarios"></tbody>
           </table>
@@ -1531,6 +1544,8 @@
           <button class="btn btn-primary" onclick="salvarConfig()">Salvar Configuração</button>
           <button class="btn btn-success" onclick="enviarLembretePagamentos()">Enviar Lembrete de Pagamentos</button>
           <button class="btn btn-warning" onclick="enviarAlertasContratos()" style="background:#c0392b;">Enviar Alertas de Contratos</button>
+          <button class="btn btn-warning" onclick="enviarAlertasCertidoes()" style="background:#d4820a;">Enviar Alertas de Certidões</button>
+          <button class="btn btn-warning" onclick="enviarAlertasLicitacoes()" style="background:#24527a;">Enviar Alertas de Licitações</button>
         </div>
         <div id="cfg-msg" style="margin-top:12px;display:none;" class="info-box"></div>
       </div>
@@ -1902,6 +1917,15 @@ function mostrarApp(user) {
   } else {
     if (dropUsuarios) dropUsuarios.style.display = 'none';
     if (subnavUsuarios) subnavUsuarios.style.display = 'none';
+  }
+  const ddDest = document.querySelector('#config-dropdown a[onclick*="destinatarios"]');
+  const subDest = document.querySelector('.config-subnav button[onclick*="destinatarios"]');
+  if (isAdminOrSetorAdmin) {
+    if (ddDest) ddDest.style.display = '';
+    if (subDest) subDest.style.display = '';
+  } else {
+    if (ddDest) ddDest.style.display = 'none';
+    if (subDest) subDest.style.display = 'none';
   }
   const isSetorAdmin = user.role === 'setor_admin';
   if (isSetorAdmin) {
@@ -2728,6 +2752,23 @@ function popularDestEmpresaCheckboxes() {
   `).join('');
 }
 
+function popularDestSetoresCheckboxes() {
+  const container = document.getElementById('dest-setores-checkboxes');
+  if (!container) return;
+  const sects = getSectors().filter(s => s.active !== 0);
+  if (!sects.length) {
+    container.innerHTML = '<span style="color:#aaa;font-size:0.85rem;">Nenhum setor cadastrado.</span>';
+    return;
+  }
+  const selected = JSON.parse(container.dataset.selected || '[]');
+  container.innerHTML = sects.map(s => `
+    <label style="font-size:0.82rem;">
+      <input type="checkbox" value="${s.id}" ${selected.includes(s.id) ? 'checked' : ''}/>
+      ${escapeHtml(s.nome)}
+    </label>
+  `).join('');
+}
+
 let _editandoDestId = null;
 
 function renderDestinatariosConfig() {
@@ -2735,19 +2776,29 @@ function renderDestinatariosConfig() {
   if (!tb) return;
   const dests = getDestinatarios();
   if (!dests.length) {
-    tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#aaa;padding:32px">Nenhum destinatario cadastrado.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:32px">Nenhum destinatario cadastrado.</td></tr>';
     return;
   }
   const empresas = getEmpresas();
+  const sects = getSectors();
+  const alertaLabels = { contratos: 'Contratos', pagamentos: 'Pagamentos', certidoes: 'Certidões', licitacoes: 'Licitações' };
   tb.innerHTML = dests.map(d => {
     const nomes = (d.empresaIds || []).map(id => {
       const e = empresas.find(x => x.id === id);
       return e ? e.nome : null;
     }).filter(Boolean).join(', ') || 'Todas as empresas';
+    const setoresNomes = (d.setores || []).map(id => {
+      const s = sects.find(x => x.id === id);
+      return s ? s.nome : null;
+    }).filter(Boolean).join(', ') || 'Todos';
+    const alertas = (d.alertas || []);
+    const alertasTxt = alertas.length ? alertas.map(a => alertaLabels[a] || a).join(', ') : 'Todos';
     return `<tr>
       <td>${d.email}</td>
       <td>${d.nome || '—'}</td>
+      <td style="font-size:0.8rem;color:${alertas.length ? '#1a3c5e' : '#888'};">${alertasTxt}</td>
       <td style="font-size:0.82rem;">${nomes}</td>
+      <td style="font-size:0.82rem;">${setoresNomes}</td>
       <td>
         <button class="btn btn-sm btn-primary" onclick="editarDestinatario('${d.id}')" style="padding:2px 8px;font-size:0.75rem;">Editar</button>
         <button class="btn btn-sm btn-danger" onclick="excluirDestinatario('${d.id}')" style="padding:2px 8px;font-size:0.75rem;">Excluir</button>
@@ -2762,9 +2813,13 @@ function limparFormDestinatario() {
   document.getElementById('dest-nome').value = '';
   const container = document.getElementById('dest-empresas-checkboxes');
   container.dataset.selected = '[]';
+  const containerSets = document.getElementById('dest-setores-checkboxes');
+  containerSets.dataset.selected = '[]';
+  document.querySelectorAll('#dest-alertas-checkboxes input[type="checkbox"]').forEach(cb => cb.checked = true);
   document.getElementById('dest-form-edit-id').style.display = 'none';
   document.getElementById('btn-salvar-dest').textContent = 'Adicionar';
   popularDestEmpresaCheckboxes();
+  popularDestSetoresCheckboxes();
 }
 
 function editarDestinatario(id) {
@@ -2775,9 +2830,16 @@ function editarDestinatario(id) {
   document.getElementById('dest-nome').value = d.nome || '';
   const container = document.getElementById('dest-empresas-checkboxes');
   container.dataset.selected = JSON.stringify(d.empresaIds || []);
+  const containerSets = document.getElementById('dest-setores-checkboxes');
+  containerSets.dataset.selected = JSON.stringify(d.setores || []);
+  const alertas = d.alertas || [];
+  document.querySelectorAll('#dest-alertas-checkboxes input[type="checkbox"]').forEach(cb => {
+    cb.checked = !alertas.length || alertas.includes(cb.value);
+  });
   document.getElementById('dest-form-edit-id').style.display = 'block';
   document.getElementById('btn-salvar-dest').textContent = 'Salvar';
   popularDestEmpresaCheckboxes();
+  popularDestSetoresCheckboxes();
 }
 
 function salvarDestinatario() {
@@ -2785,15 +2847,20 @@ function salvarDestinatario() {
   const nome = document.getElementById('dest-nome').value.trim();
   const checks = document.querySelectorAll('#dest-empresas-checkboxes input[type="checkbox"]:checked');
   const empresaIds = Array.from(checks).map(c => c.value);
+  const setChecks = document.querySelectorAll('#dest-setores-checkboxes input[type="checkbox"]:checked');
+  const setores = Array.from(setChecks).map(c => c.value);
+  const alertChecks = document.querySelectorAll('#dest-alertas-checkboxes input[type="checkbox"]:checked');
+  const alertas = Array.from(alertChecks).map(c => c.value);
   if (!email) { mostrarToast('Informe o e-mail do destinatario.', 'erro'); return; }
   const dests = getDestinatarios();
   const duplicata = dests.find(d => d.email.toLowerCase() === email.toLowerCase() && d.id !== _editandoDestId);
   if (duplicata) { mostrarToast('Este e-mail ja esta cadastrado.', 'erro'); return; }
+  if (!alertas.length) { mostrarToast('Selecione ao menos um tipo de alerta.', 'erro'); return; }
   if (_editandoDestId) {
     const idx = dests.findIndex(d => d.id === _editandoDestId);
-    if (idx !== -1) { dests[idx].email = email; dests[idx].nome = nome; dests[idx].empresaIds = empresaIds; }
+    if (idx !== -1) { dests[idx].email = email; dests[idx].nome = nome; dests[idx].empresaIds = empresaIds; dests[idx].setores = setores; dests[idx].alertas = alertas; }
   } else {
-    dests.push({ id: uid(), email, nome, empresaIds, criadoEm: new Date().toISOString() });
+    dests.push({ id: uid(), email, nome, empresaIds, setores, alertas, criadoEm: new Date().toISOString() });
   }
   saveDestinatarios(dests);
   limparFormDestinatario();
@@ -2916,6 +2983,8 @@ function loadFromServer() {
       const serverDests = data.destinatarios.map(d => ({
         id: d.id, email: d.email, nome: d.nome || '',
         empresaIds: (typeof d.empresa_ids === 'string' ? JSON.parse(d.empresa_ids || '[]') : (d.empresa_ids || [])),
+        setores: (typeof d.setores === 'string' ? JSON.parse(d.setores || '[]') : (d.setores || [])),
+        alertas: (typeof d.alertas === 'string' ? JSON.parse(d.alertas || '[]') : (d.alertas || [])),
         criadoEm: d.criado_em
       }));
       cachedDestinatarios = serverDests; saveDestinatarios(serverDests);
@@ -2929,25 +2998,50 @@ function loadFromServer() {
       cachedSectors = serverSectors; saveSectors(serverSectors);
     }
     if (data.certidoes && data.certidoes.length) {
-      const serverCerts = data.certidoes.map(ct => ({
-        id: ct.id, empresaId: ct.empresa_id, tipo: ct.tipo,
-        dataEmissao: ct.data_emissao, dataValidade: ct.data_validade,
-        status: ct.status, arquivo: ct.arquivo ? JSON.parse(ct.arquivo) : null,
-        obs: ct.obs || '', criadoEm: ct.created_at
-      }));
+      const serverCerts = data.certidoes.map(ct => {
+        let arquivo = null;
+        if (ct.arquivo_dados) {
+          try { arquivo = JSON.parse(ct.arquivo_dados); } catch(e) {}
+        }
+        if (!arquivo && ct.arquivo_nome) {
+          arquivo = { name: ct.arquivo_nome, data: '' };
+        }
+        return {
+          id: ct.id, empresaId: ct.empresa_id, tipo: ct.tipo,
+          dataEmissao: ct.data_emissao, dataValidade: ct.data_validade,
+          status: ct.status, arquivo: arquivo,
+          obs: ct.observacoes || '', criadoEm: ct.criado_em
+        };
+      });
       cachedCertidoes = serverCerts; saveCertidoes(serverCerts);
     }
     if (data.licitacoes && data.licitacoes.length) {
-      const serverLics = data.licitacoes.map(lc => ({
-        id: lc.id, numeroLicitacao: lc.numero_licitacao, edital: lc.edital,
-        objeto: lc.objeto, empresaId: lc.empresa_id, contratoId: lc.contrato_id,
-        valor: lc.valor, dataHomologacao: lc.data_homologacao,
-        dataInicio: lc.data_inicio, dataFim: lc.data_fim,
-        status: lc.status,
-        arquivoEdital: lc.arquivo_edital ? JSON.parse(lc.arquivo_edital) : null,
-        arquivoContrato: lc.arquivo_contrato ? JSON.parse(lc.arquivo_contrato) : null,
-        obs: lc.obs || '', criadoEm: lc.created_at
-      }));
+      const serverLics = data.licitacoes.map(lc => {
+        let arquivoEdital = null;
+        if (lc.arquivo_edital_dados) {
+          try { arquivoEdital = JSON.parse(lc.arquivo_edital_dados); } catch(e) {}
+        }
+        if (!arquivoEdital && lc.arquivo_edital_nome) {
+          arquivoEdital = { name: lc.arquivo_edital_nome, data: '' };
+        }
+        let arquivoContrato = null;
+        if (lc.arquivo_contrato_dados) {
+          try { arquivoContrato = JSON.parse(lc.arquivo_contrato_dados); } catch(e) {}
+        }
+        if (!arquivoContrato && lc.arquivo_contrato_nome) {
+          arquivoContrato = { name: lc.arquivo_contrato_nome, data: '' };
+        }
+        return {
+          id: lc.id, numeroLicitacao: lc.numero_licitacao, edital: lc.edital,
+          objeto: lc.objeto, empresaId: lc.empresa_id, contratoId: lc.contrato_id,
+          valor: lc.valor, dataHomologacao: lc.data_homologacao,
+          dataInicio: lc.data_inicio, dataFim: lc.data_fim,
+          status: lc.status,
+          arquivoEdital: arquivoEdital,
+          arquivoContrato: arquivoContrato,
+          obs: lc.observacoes || '', criadoEm: lc.criado_em
+        };
+      });
       cachedLicitacoes = serverLics; saveLicitacoes(serverLics);
     }
     }
@@ -3426,6 +3520,7 @@ function toggleConfigDropdown(event) {
 
 function showConfigSub(section) {
   const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const isAdmin = user.role === 'admin';
   const isAdminOrSetorAdmin = user.role === 'admin' || user.role === 'setor_admin';
   const isSetorAdmin = user.role === 'setor_admin';
   if (section === 'usuarios' && !isAdminOrSetorAdmin) {
@@ -3433,6 +3528,9 @@ function showConfigSub(section) {
   }
   if (isSetorAdmin && ['empresas', 'setores', 'tipos', 'email', 'historico'].includes(section)) {
     section = 'usuarios';
+  }
+  if (!isAdminOrSetorAdmin && ['destinatarios'].includes(section)) {
+    section = 'minha-conta';
   }
 
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -4326,6 +4424,15 @@ function renderDashboard() {
   const certVencidas = certidoes.filter(c => calcStatusCertidao(c) === 'vencida').length;
   const certVencendo = certidoes.filter(c => calcStatusCertidao(c) === 'vencendo').length;
 
+  let licitacoes = getLicitacoes();
+  const licTotal = licitacoes.length;
+  const licAndamento = licitacoes.filter(l => l.status === 'em_andamento' || !l.status).length;
+  const licVencidas = licitacoes.filter(l => {
+    if (l.status === 'concluido' || l.status === 'anulado') return false;
+    if (!l.dataFim) return false;
+    return new Date(l.dataFim + 'T12:00:00') < hoje;
+  }).length;
+
   const ativos   = contratos.filter(c => new Date(c.fim+'T12:00:00') >= hoje).length;
   const vencidos  = contratos.length - ativos;
   const pendentes = pagamentos.filter(p => calcStatusPgto(p)==='pendente').length;
@@ -4366,6 +4473,18 @@ function renderDashboard() {
     <div class="summary-card red">
       <div class="value">${certVencidas}</div>
       <div class="label">Cert. Vencidas</div>
+    </div>
+    <div class="summary-card">
+      <div class="value">${licTotal}</div>
+      <div class="label">Licitações Total</div>
+    </div>
+    <div class="summary-card green">
+      <div class="value">${licAndamento}</div>
+      <div class="label">Lic. Em Andamento</div>
+    </div>
+    <div class="summary-card red">
+      <div class="value">${licVencidas}</div>
+      <div class="label">Lic. Vencidas</div>
     </div>`;
 
   const filtroParte = (document.getElementById('filtro-dash-parte').value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
@@ -4739,7 +4858,9 @@ function enviarLembretePagamentos() {
   const destinatarios = getDestinatarios().map(d => ({
     email: d.email,
     nome: d.nome || '',
-    empresaIds: d.empresaIds || []
+    empresaIds: d.empresaIds || [],
+    setores: d.setores || [],
+    alertas: d.alertas || []
   }));
   fetch('/api/enviar-lembrete-pagamentos', {
     method:'POST',
@@ -4766,7 +4887,9 @@ function enviarAlertasContratos() {
   const destinatarios = getDestinatarios().map(d => ({
     email: d.email,
     nome: d.nome || '',
-    empresaIds: d.empresaIds || []
+    empresaIds: d.empresaIds || [],
+    setores: d.setores || [],
+    alertas: d.alertas || []
   }));
   fetch('/api/enviar-alertas-contratos', {
     method:'POST',
@@ -4783,6 +4906,68 @@ function enviarAlertasContratos() {
     msg.style.display = 'block';
   }).finally(()=>{ btn.disabled = false; btn.textContent = 'Enviar Alertas de Contratos'; });
   }).catch(() => { btn.disabled = false; btn.textContent = 'Enviar Alertas de Contratos'; });
+}
+
+function enviarAlertasCertidoes() {
+  const btn = event.target;
+  const msg = document.getElementById('cfg-msg');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  getCsrfToken().then(() => {
+  const empresas = getEmpresas().map(e => ({ id: e.id, nome: e.nome }));
+  const sectors = getSectors().map(s => ({ id: s.id, nome: s.nome }));
+  const certidoes = getCertidoes();
+  const destinatarios = getDestinatarios().map(d => ({
+    email: d.email,
+    nome: d.nome || '',
+    empresaIds: d.empresaIds || [],
+    setores: d.setores || []
+  }));
+  fetch('/api/enviar-alertas-certidoes', {
+    method:'POST',
+    headers: Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
+    body:JSON.stringify({ empresas, sectors, certidoes, destinatarios })
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok) { msg.className = 'ok-box'; msg.textContent = d.msg || 'E-mail enviado!'; }
+    else { msg.className = 'warn-box'; msg.textContent = d.erro || 'Erro ao enviar'; }
+    msg.style.display = 'block';
+    setTimeout(()=>{ msg.style.display = 'none'; }, 6000);
+  }).catch(()=>{
+    msg.className = 'warn-box';
+    msg.textContent = 'Servidor offline. Inicie o servidor com "python app.py".';
+    msg.style.display = 'block';
+  }).finally(()=>{ btn.disabled = false; btn.textContent = 'Enviar Alertas de Certidões'; });
+  }).catch(() => { btn.disabled = false; btn.textContent = 'Enviar Alertas de Certidões'; });
+}
+
+function enviarAlertasLicitacoes() {
+  const btn = event.target;
+  const msg = document.getElementById('cfg-msg');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  getCsrfToken().then(() => {
+  const empresas = getEmpresas().map(e => ({ id: e.id, nome: e.nome }));
+  const sectors = getSectors().map(s => ({ id: s.id, nome: s.nome }));
+  const licitacoes = getLicitacoes();
+  const destinatarios = getDestinatarios().map(d => ({
+    email: d.email,
+    nome: d.nome || '',
+    empresaIds: d.empresaIds || [],
+    setores: d.setores || []
+  }));
+  fetch('/api/enviar-alertas-licitacoes', {
+    method:'POST',
+    headers: Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
+    body:JSON.stringify({ empresas, sectors, licitacoes, destinatarios })
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok) { msg.className = 'ok-box'; msg.textContent = d.msg || 'E-mail enviado!'; }
+    else { msg.className = 'warn-box'; msg.textContent = d.erro || 'Erro ao enviar'; }
+    msg.style.display = 'block';
+    setTimeout(()=>{ msg.style.display = 'none'; }, 6000);
+  }).catch(()=>{
+    msg.className = 'warn-box';
+    msg.textContent = 'Servidor offline. Inicie o servidor com "python app.py".';
+    msg.style.display = 'block';
+  }).finally(()=>{ btn.disabled = false; btn.textContent = 'Enviar Alertas de Licitações'; });
+  }).catch(() => { btn.disabled = false; btn.textContent = 'Enviar Alertas de Licitações'; });
 }
 
 // ===================== CSS ADICIONAL =====================
@@ -4850,6 +5035,8 @@ function renderNotificacoes() {
   const notifs = [];
   const contratos = getContratos();
   const pagamentos = getPagamentos();
+  const certidoes = getCertidoes();
+  const licitacoes = getLicitacoes();
   const hoje = new Date(); hoje.setHours(0,0,0,0);
 
   contratos.forEach(c => {
@@ -4870,6 +5057,31 @@ function renderNotificacoes() {
       notifs.push({ tipo: 'urgente', texto: `Pagamento "${p.descricao}" ATRASADO (venceu ${fmtData(p.vencimento)})`, icon: '&#9888;' });
     } else if (diffDias <= 7) {
       notifs.push({ tipo: 'alerta', texto: `Pagamento "${p.descricao}" vence em ${diffDias} dia(s)`, icon: '&#128176;' });
+    }
+  });
+
+  certidoes.forEach(c => {
+    const st = calcStatusCertidao(c);
+    if (st === 'vencida') {
+      notifs.push({ tipo: 'urgente', texto: `Certidão "${c.tipo}" VENCIDA${c.empresaId ? ' (' + (getEmpresas().find(e=>e.id===c.empresaId)?.nome||'') + ')' : ''}`, icon: '&#9888;' });
+    } else if (c.dataValidade) {
+      const val = new Date(c.dataValidade + 'T12:00:00');
+      const diffDias = Math.ceil((val - hoje) / (1000*60*60*24));
+      if (diffDias <= 35 && diffDias > 0) {
+        notifs.push({ tipo: 'alerta', texto: `Certidão "${c.tipo}" vence em ${diffDias} dia(s)${c.empresaId ? ' (' + (getEmpresas().find(e=>e.id===c.empresaId)?.nome||'') + ')' : ''}`, icon: '&#128196;' });
+      }
+    }
+  });
+
+  licitacoes.forEach(l => {
+    const vigFim = l.dataFim ? new Date(l.dataFim + 'T12:00:00') : null;
+    if (vigFim && l.status !== 'concluido' && l.status !== 'anulado') {
+      const diffDias = Math.ceil((vigFim - hoje) / (1000*60*60*24));
+      if (diffDias <= 0) {
+        notifs.push({ tipo: 'urgente', texto: `Licitação ${l.numeroLicitacao || ''} VENCIDA`, icon: '&#9888;' });
+      } else if (diffDias <= 35) {
+        notifs.push({ tipo: 'alerta', texto: `Licitação ${l.numeroLicitacao || ''} vence em ${diffDias} dia(s)`, icon: '&#128195;' });
+      }
     }
   });
 
@@ -4901,6 +5113,8 @@ function renderNotificacoes() {
 function checkNotificacoes() {
   const contratos = getContratos();
   const pagamentos = getPagamentos();
+  const certidoes = getCertidoes();
+  const licitacoes = getLicitacoes();
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   let count = 0;
 
@@ -4915,6 +5129,19 @@ function checkNotificacoes() {
     const venc = new Date(p.vencimento + 'T12:00:00');
     const diffDias = Math.ceil((venc - hoje) / (1000*60*60*24));
     if (diffDias <= 7) count++;
+  });
+
+  certidoes.forEach(c => {
+    const st = calcStatusCertidao(c);
+    if (st === 'vencida' || st === 'vencendo') count++;
+  });
+
+  licitacoes.forEach(l => {
+    const vigFim = l.dataFim ? new Date(l.dataFim + 'T12:00:00') : null;
+    if (vigFim && l.status !== 'concluido' && l.status !== 'anulado') {
+      const diffDias = Math.ceil((vigFim - hoje) / (1000*60*60*24));
+      if (diffDias <= 35) count++;
+    }
   });
 
   const badge = document.getElementById('notif-badge');

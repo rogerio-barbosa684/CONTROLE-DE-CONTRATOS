@@ -3,14 +3,18 @@
 
 import sqlite3 from 'sqlite3'
 import { createClient } from '@supabase/supabase-js'
-import { readFileSync, writeFileSync } from 'fs'
+import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const baseDir = resolve(__dirname, '..')
 
-// Carrega .env manualmente (sem dotenv)
+function existsSync(p) {
+  try { readFileSync(p); return true } catch { return false }
+}
+
+// Carrega .env manualmente
 const envPath = resolve(baseDir, '.env')
 if (existsSync(envPath)) {
   for (const line of readFileSync(envPath, 'utf8').split('\n')) {
@@ -55,7 +59,6 @@ async function migrate(table, supabaseTable, transform = r => r) {
     const { error } = await supabase.from(supabaseTable).upsert(batch, { onConflict: 'id' })
     if (error) {
       console.error(`  Erro em ${table} lote ${i}:`, error.message)
-      // Tenta inserir um por um
       for (const row of batch) {
         const { error: e2 } = await supabase.from(supabaseTable).upsert(row, { onConflict: 'id' })
         if (e2) console.error(`    Erro no registro ${row.id || row.username}:`, e2.message)
@@ -63,10 +66,6 @@ async function migrate(table, supabaseTable, transform = r => r) {
     }
   }
   console.log(`  ${table}: ${rows.length} registros migrados`)
-}
-
-function existsSync(p) {
-  try { readFileSync(p); return true } catch { return false }
 }
 
 async function main() {
@@ -81,8 +80,10 @@ async function main() {
     for (const u of users) {
       const { error } = await supabase.from('users').upsert({
         id: u.id, username: u.username, full_name: u.full_name,
-        password_hash: u.password_hash, role: u.role,
-        active: u.active, created_at: u.created_at
+        email: u.email || '', password_hash: u.password_hash,
+        role: u.role, active: u.active,
+        password_changed_at: u.password_changed_at || null,
+        created_at: u.created_at
       })
       if (error) console.error(`  Erro user ${u.username}:`, error.message)
     }
@@ -93,24 +94,82 @@ async function main() {
   await migrate('contracts', 'contracts')
   await migrate('payments', 'payments')
   await migrate('additives', 'additives')
+  await migrate('sectors', 'sectors')
+
+  // Migrar destinatarios (incluindo setores e alertas)
+  const destinatarios = await query('SELECT * FROM destinatarios')
+  if (destinatarios.length) {
+    console.log('Migrando destinatarios...')
+    for (const d of destinatarios) {
+      let setores = d.setores || '[]'
+      let alertas = d.alertas || '[]'
+      if (typeof setores === 'string' && !setores.startsWith('[')) {
+        setores = JSON.stringify([setores])
+      }
+      if (typeof alertas === 'string' && !alertas.startsWith('[')) {
+        alertas = JSON.stringify([alertas])
+      }
+      const { error } = await supabase.from('destinatarios').upsert({
+        id: d.id, email: d.email, nome: d.nome || '',
+        empresa_ids: d.empresa_ids || '[]',
+        setores: setores, alertas: alertas
+      })
+      if (error) console.error(`  Erro destinatario ${d.email}:`, error.message)
+    }
+    console.log(`  destinatarios: ${destinatarios.length} registros migrados`)
+  }
+
+  // Migrar audit_log
   await migrate('audit_log', 'audit_log', r => ({
     id: r.id, user_id: r.user_id, action: r.action,
     entity: r.entity, entity_id: r.entity_id,
     details: r.details, created_at: r.created_at
   }))
-  await migrate('destinatarios', 'destinatarios')
 
-  // Migrar email_config
-  const emailRows = await query("SELECT * FROM config_email")
-  if (emailRows.length) {
-    const e = emailRows[0]
-    await supabase.from('email_config').upsert({
-      id: 1, smtp_server: e.smtp_server, smtp_port: e.smtp_port,
-      email_remetente: e.email_remetente,
-      email_senha_enc: e.email_senha_enc || '',
-      email_destinatario: e.email_destinatario || ''
+  // Migrar certidoes
+  await migrate('certidoes', 'certidoes', r => ({
+    id: r.id, empresa_id: r.empresa_id || '',
+    tipo: r.tipo || '', data_emissao: r.data_emissao || '',
+    data_validade: r.data_validade || '',
+    status: r.status || 'pendente',
+    arquivo_nome: r.arquivo_nome || '',
+    arquivo_dados: r.arquivo_dados || '',
+    observacoes: r.observacoes || '',
+    criado_em: r.criado_em
+  }))
+
+  // Migrar licitacoes
+  await migrate('licitacoes', 'licitacoes', r => ({
+    id: r.id, empresa_id: r.empresa_id || '',
+    numero_licitacao: r.numero_licitacao || '',
+    edital: r.edital || '', objeto: r.objeto || '',
+    contrato_id: r.contrato_id || '', valor: r.valor || 0,
+    data_homologacao: r.data_homologacao || '',
+    data_inicio: r.data_inicio || '', data_fim: r.data_fim || '',
+    status: r.status || 'em_andamento',
+    arquivo_edital_nome: r.arquivo_edital_nome || '',
+    arquivo_edital_dados: r.arquivo_edital_dados || '',
+    arquivo_contrato_nome: r.arquivo_contrato_nome || '',
+    arquivo_contrato_dados: r.arquivo_contrato_dados || '',
+    observacoes: r.observacoes || '',
+    criado_em: r.criado_em
+  }))
+
+  // Migrar email_config a partir do config_email.json
+  const configPath = resolve(baseDir, 'config_email.json')
+  if (existsSync(configPath)) {
+    const emailCfg = JSON.parse(readFileSync(configPath, 'utf8'))
+    console.log('Migrando email_config...')
+    const { error } = await supabase.from('email_config').upsert({
+      id: 1,
+      smtp_server: emailCfg.smtp_server || 'smtp.gmail.com',
+      smtp_port: emailCfg.smtp_port || 587,
+      email_remetente: emailCfg.email_remetente || '',
+      email_senha_enc: emailCfg.email_senha_enc || '',
+      email_destinatario: emailCfg.email_destinatario || ''
     })
-    console.log('  email_config: 1 registro migrado')
+    if (error) console.error('  Erro email_config:', error.message)
+    else console.log('  email_config: 1 registro migrado')
   }
 
   db.close()

@@ -296,6 +296,8 @@ def init_db():
         email TEXT NOT NULL,
         nome TEXT DEFAULT '',
         empresa_ids TEXT DEFAULT '[]',
+        setores TEXT DEFAULT '[]',
+        alertas TEXT DEFAULT '["contratos","pagamentos","certidoes","licitacoes"]',
         criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
     );
     CREATE TABLE IF NOT EXISTS password_resets (
@@ -320,6 +322,37 @@ def init_db():
         FOREIGN KEY (user_id) REFERENCES users(id),
         FOREIGN KEY (setor_id) REFERENCES sectors(id)
     );
+    CREATE TABLE IF NOT EXISTS certidoes (
+        id TEXT PRIMARY KEY,
+        empresa_id TEXT DEFAULT '',
+        tipo TEXT DEFAULT '',
+        data_emissao TEXT DEFAULT '',
+        data_validade TEXT DEFAULT '',
+        status TEXT DEFAULT 'pendente',
+        arquivo_nome TEXT DEFAULT '',
+        arquivo_dados TEXT DEFAULT '',
+        observacoes TEXT DEFAULT '',
+        criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS licitacoes (
+        id TEXT PRIMARY KEY,
+        empresa_id TEXT DEFAULT '',
+        numero_licitacao TEXT DEFAULT '',
+        edital TEXT DEFAULT '',
+        objeto TEXT DEFAULT '',
+        contrato_id TEXT DEFAULT '',
+        valor REAL DEFAULT 0,
+        data_homologacao TEXT DEFAULT '',
+        data_inicio TEXT DEFAULT '',
+        data_fim TEXT DEFAULT '',
+        status TEXT DEFAULT 'em_andamento',
+        arquivo_edital_nome TEXT DEFAULT '',
+        arquivo_edital_dados TEXT DEFAULT '',
+        arquivo_contrato_nome TEXT DEFAULT '',
+        arquivo_contrato_dados TEXT DEFAULT '',
+        observacoes TEXT DEFAULT '',
+        criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
     """)
     for col, tbl in [
         ('arquivo_contrato', 'contracts'), ('tipo', 'contracts'), ('empresa_id', 'contracts'), ('forma_pagamento', 'contracts'),
@@ -328,6 +361,7 @@ def init_db():
         ('active', 'companies'), ('active', 'contracts'),
         ('email', 'users'), ('password_changed_at', 'users'),
         ('resumo', 'contracts'), ('resumo', 'additives'),
+        ('setores', 'destinatarios'), ('alertas', 'destinatarios'),
     ]:
         try:
             cols = [r['name'] for r in db.execute(f"PRAGMA table_info({tbl})").fetchall()]
@@ -784,7 +818,9 @@ def api_sync_get():
     for s in sectors:
         val = s.get('active')
         s['active'] = 1 if val is not None and val != 0 and val != '0' else 0
-    return jsonify({"contratos": contratos, "pagamentos": pagamentos, "usuarios": usuarios, "aditivos": aditivos, "empresas": empresas, "destinatarios": destinatarios, "sectors": sectors})
+    certidoes = query_db("SELECT * FROM certidoes ORDER BY criado_em ASC")
+    licitacoes = query_db("SELECT * FROM licitacoes ORDER BY criado_em ASC")
+    return jsonify({"contratos": contratos, "pagamentos": pagamentos, "usuarios": usuarios, "aditivos": aditivos, "empresas": empresas, "destinatarios": destinatarios, "sectors": sectors, "certidoes": certidoes, "licitacoes": licitacoes})
 
 @app.route('/api/sync', methods=['POST'])
 def api_sync_post():
@@ -908,13 +944,17 @@ def api_sync_post():
             continue
         nome = (d.get("nome") or "").strip()
         empresa_ids = d.get("empresaIds", [])
+        setores = d.get("setores", [])
+        alertas = d.get("alertas", [])
+        if isinstance(alertas, str):
+            alertas = [a.strip() for a in alertas.split(',') if a.strip()]
         existing = query_db("SELECT id FROM destinatarios WHERE id=?", (did,), one=True)
         if existing:
-            execute_db("UPDATE destinatarios SET email=?, nome=?, empresa_ids=? WHERE id=?",
-                       (email, nome, json.dumps(empresa_ids, ensure_ascii=False), did))
+            execute_db("UPDATE destinatarios SET email=?, nome=?, empresa_ids=?, setores=?, alertas=? WHERE id=?",
+                       (email, nome, json.dumps(empresa_ids, ensure_ascii=False), json.dumps(setores, ensure_ascii=False), json.dumps(alertas, ensure_ascii=False), did))
         else:
-            execute_db("INSERT INTO destinatarios (id, email, nome, empresa_ids) VALUES (?,?,?,?)",
-                       (did, email, nome, json.dumps(empresa_ids, ensure_ascii=False)))
+            execute_db("INSERT INTO destinatarios (id, email, nome, empresa_ids, setores, alertas) VALUES (?,?,?,?,?,?)",
+                       (did, email, nome, json.dumps(empresa_ids, ensure_ascii=False), json.dumps(setores, ensure_ascii=False), json.dumps(alertas, ensure_ascii=False)))
         importados["destinatarios"] = importados.get("destinatarios", 0) + 1
 
     for s in dados.get("sectors", []):
@@ -930,6 +970,76 @@ def api_sync_post():
         else:
             execute_db("INSERT INTO sectors (id, nome, active) VALUES (?,?,?)", (sid, nome, active))
         importados["sectors"] = importados.get("sectors", 0) + 1
+
+    for ct in dados.get("certidoes", []):
+        ctid = (ct.get("id") or "").strip()
+        if not ctid:
+            importados["ignorados"] += 1
+            continue
+        empresa_id = (ct.get("empresaId") or ct.get("empresa_id") or "").strip()
+        tipo = (ct.get("tipo") or "").strip()
+        data_emissao = (ct.get("dataEmissao") or ct.get("data_emissao") or "").strip()
+        data_validade = (ct.get("dataValidade") or ct.get("data_validade") or "").strip()
+        status = (ct.get("status") or "pendente").strip()
+        arquivo = ct.get("arquivo") or {}
+        arquivo_nome = (arquivo.get("name") or "").strip() if isinstance(arquivo, dict) else ""
+        arquivo_dados = json.dumps(arquivo, ensure_ascii=False) if isinstance(arquivo, dict) and arquivo.get("data") else ""
+        observacoes = (ct.get("obs") or ct.get("observacoes") or "").strip()
+        existing = query_db("SELECT id FROM certidoes WHERE id=?", (ctid,), one=True)
+        if existing:
+            execute_db("""UPDATE certidoes SET empresa_id=?,tipo=?,data_emissao=?,data_validade=?,
+                status=?,arquivo_nome=?,arquivo_dados=?,observacoes=? WHERE id=?""",
+                (empresa_id, tipo, data_emissao, data_validade, status,
+                 arquivo_nome, arquivo_dados, observacoes, ctid))
+        else:
+            execute_db("""INSERT INTO certidoes (id,empresa_id,tipo,data_emissao,data_validade,
+                status,arquivo_nome,arquivo_dados,observacoes) VALUES (?,?,?,?,?,?,?,?,?)""",
+                (ctid, empresa_id, tipo, data_emissao, data_validade, status,
+                 arquivo_nome, arquivo_dados, observacoes))
+        importados["certidoes"] = importados.get("certidoes", 0) + 1
+
+    for lc in dados.get("licitacoes", []):
+        lcid = (lc.get("id") or "").strip()
+        if not lcid:
+            importados["ignorados"] += 1
+            continue
+        empresa_id = (lc.get("empresaId") or lc.get("empresa_id") or "").strip()
+        numero = (lc.get("numeroLicitacao") or lc.get("numero_licitacao") or "").strip()
+        edital = (lc.get("edital") or "").strip()
+        objeto = (lc.get("objeto") or "").strip()
+        contrato_id = (lc.get("contratoId") or lc.get("contrato_id") or "").strip()
+        valor = float(lc.get("valor") or 0)
+        data_homologacao = (lc.get("dataHomologacao") or lc.get("data_homologacao") or "").strip()
+        data_inicio = (lc.get("dataInicio") or lc.get("data_inicio") or "").strip()
+        data_fim = (lc.get("dataFim") or lc.get("data_fim") or "").strip()
+        status = (lc.get("status") or "em_andamento").strip()
+        arq_edital = lc.get("arquivoEdital") or {}
+        arq_edital_nome = (arq_edital.get("name") or "").strip() if isinstance(arq_edital, dict) else ""
+        arq_edital_dados = json.dumps(arq_edital, ensure_ascii=False) if isinstance(arq_edital, dict) and arq_edital.get("data") else ""
+        arq_contrato = lc.get("arquivoContrato") or {}
+        arq_contrato_nome = (arq_contrato.get("name") or "").strip() if isinstance(arq_contrato, dict) else ""
+        arq_contrato_dados = json.dumps(arq_contrato, ensure_ascii=False) if isinstance(arq_contrato, dict) and arq_contrato.get("data") else ""
+        observacoes = (lc.get("obs") or lc.get("observacoes") or "").strip()
+        existing = query_db("SELECT id FROM licitacoes WHERE id=?", (lcid,), one=True)
+        if existing:
+            execute_db("""UPDATE licitacoes SET empresa_id=?,numero_licitacao=?,edital=?,objeto=?,
+                contrato_id=?,valor=?,data_homologacao=?,data_inicio=?,data_fim=?,status=?,
+                arquivo_edital_nome=?,arquivo_edital_dados=?,arquivo_contrato_nome=?,
+                arquivo_contrato_dados=?,observacoes=? WHERE id=?""",
+                (empresa_id, numero, edital, objeto, contrato_id, valor,
+                 data_homologacao, data_inicio, data_fim, status,
+                 arq_edital_nome, arq_edital_dados, arq_contrato_nome,
+                 arq_contrato_dados, observacoes, lcid))
+        else:
+            execute_db("""INSERT INTO licitacoes (id,empresa_id,numero_licitacao,edital,objeto,
+                contrato_id,valor,data_homologacao,data_inicio,data_fim,status,
+                arquivo_edital_nome,arquivo_edital_dados,arquivo_contrato_nome,
+                arquivo_contrato_dados,observacoes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (lcid, empresa_id, numero, edital, objeto, contrato_id, valor,
+                 data_homologacao, data_inicio, data_fim, status,
+                 arq_edital_nome, arq_edital_dados, arq_contrato_nome,
+                 arq_contrato_dados, observacoes))
+        importados["licitacoes"] = importados.get("licitacoes", 0) + 1
 
     audit("SYNC", "system", "", f"Sincronizacao concluida: {importados}")
     return jsonify({"ok": True, "importados": importados})
@@ -1350,15 +1460,176 @@ def montar_html_contratos_a_vencer(grupos, titulo_adicional=""):
     return [html_content]
 
 
+SETORES_ALERTA_CERT_LIC = {'comercial', 'fiscal'}
+
+
+def dest_em_setores_permitidos(setores_ids, sectors_list):
+    """Retorna True se o destinatario pertence ao grupo Comercial ou Fiscal."""
+    for s in sectors_list:
+        if s.get('id') in (setores_ids or []):
+            nome_norm = (s.get('nome') or '').strip().lower()
+            if nome_norm in SETORES_ALERTA_CERT_LIC:
+                return True
+    return False
+
+
+def processar_certidoes_alertas(certidoes, hoje):
+    grupos = {'vencidas': [], 'd35': [], 'd30': [], 'd15': [], 'd0_14': []}
+    for c in certidoes:
+        status = (c.get('status') or '').lower()
+        validade = (c.get('data_validade') or c.get('dataValidade') or '')[:10]
+        if status == 'pendente' or not validade:
+            continue
+        try:
+            dv = datetime.strptime(validade, '%Y-%m-%d').date()
+        except Exception:
+            continue
+        empresa = c.get('empresa_id') or c.get('empresaId') or ''
+        tipo = c.get('tipo', '?')
+        info = {
+            'tipo': tipo,
+            'empresa': empresa,
+            'validade': datefmt(validade),
+        }
+        dias = (dv - hoje).days
+        if dias < 0:
+            info['dias'] = -dias
+            grupos['vencidas'].append(info)
+        elif dias <= 14:
+            info['dias'] = dias
+            grupos['d0_14'].append(info)
+        elif dias == 15:
+            info['dias'] = dias
+            grupos['d15'].append(info)
+        elif dias <= 30:
+            info['dias'] = dias
+            grupos['d30'].append(info)
+        elif dias <= 35:
+            info['dias'] = dias
+            grupos['d35'].append(info)
+    return grupos
+
+
+def processar_licitacoes_alertas(licitacoes, hoje):
+    grupos = {'vencidas': [], 'd35': [], 'd30': [], 'd15': [], 'd0_14': []}
+    for l in licitacoes:
+        status = (l.get('status') or 'em_andamento').lower()
+        if status in ('concluido', 'anulado'):
+            continue
+        vig_fim = (l.get('data_fim') or l.get('dataFim') or '')[:10]
+        if not vig_fim:
+            continue
+        try:
+            df = datetime.strptime(vig_fim, '%Y-%m-%d').date()
+        except Exception:
+            continue
+        numero = l.get('numero_licitacao') or l.get('numeroLicitacao') or '?'
+        objeto = l.get('objeto', '?')
+        empresa = l.get('empresa_id') or l.get('empresaId') or ''
+        info = {
+            'numero': numero,
+            'objeto': objeto[:80],
+            'empresa': empresa,
+            'fim': datefmt(vig_fim),
+        }
+        dias = (df - hoje).days
+        if dias < 0:
+            info['dias'] = -dias
+            grupos['vencidas'].append(info)
+        elif dias <= 14:
+            info['dias'] = dias
+            grupos['d0_14'].append(info)
+        elif dias == 15:
+            info['dias'] = dias
+            grupos['d15'].append(info)
+        elif dias <= 30:
+            info['dias'] = dias
+            grupos['d30'].append(info)
+        elif dias <= 35:
+            info['dias'] = dias
+            grupos['d35'].append(info)
+    return grupos
+
+
+def montar_html_certidoes(grupos, empresa_nomes=None, titulo_adicional=""):
+    if empresa_nomes is None:
+        empresa_nomes = {}
+    if not any(grupos.values()):
+        return []
+    html_content = f'<h2 style="color:#1a3c5e">Alertas de Certidões{titulo_adicional}</h2>'
+    if grupos['vencidas']:
+        html_content += """<h3 style="color:#c0392b">VENCIDAS</h3><table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:20px">
+        <tr style="background:#ffe1e1"><th>Tipo</th><th>Empresa</th><th>Validade</th><th>Dias Vencida</th></tr>"""
+        for c in grupos['vencidas']:
+            emp_nome = empresa_nomes.get(c['empresa'], c['empresa']) if c['empresa'] else '—'
+            html_content += f'<tr><td>{html.escape(c["tipo"])}</td><td>{html.escape(emp_nome)}</td><td>{html.escape(c["validade"])}</td><td>{c["dias"]} dia(s)</td></tr>'
+        html_content += '</table>'
+    secoes = [
+        ('d35', 'ENTRE 31 E 35 DIAS PARA O VENCIMENTO', '#24527a', '#eef6ff'),
+        ('d30', 'ENTRE 16 E 30 DIAS PARA O VENCIMENTO', '#d4820a', '#fff3cd'),
+        ('d15', 'FALTAM 15 DIAS PARA O VENCIMENTO', '#c0392b', '#ffe1e1'),
+        ('d0_14', 'MENOS DE 15 DIAS PARA O VENCIMENTO — ATENCAO DIARIA', '#b71c1c', '#ffd7d7'),
+    ]
+    for chave, titulo, cor_borda, cor_fundo in secoes:
+        grupo = grupos[chave]
+        if not grupo:
+            continue
+        html_content += f"""<h3 style="color:{cor_borda}">{titulo}</h3>
+        <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:20px">
+        <tr style="background:{cor_fundo}"><th>Tipo</th><th>Empresa</th><th>Validade</th><th>Dias</th></tr>"""
+        for c in grupo:
+            emp_nome = empresa_nomes.get(c['empresa'], c['empresa']) if c['empresa'] else '—'
+            html_content += f'<tr><td>{html.escape(c["tipo"])}</td><td>{html.escape(emp_nome)}</td><td>{html.escape(c["validade"])}</td><td>{c["dias"]} dia(s)</td></tr>'
+        html_content += '</table>'
+    return [html_content]
+
+
+def montar_html_licitacoes(grupos, empresa_nomes=None, titulo_adicional=""):
+    if empresa_nomes is None:
+        empresa_nomes = {}
+    if not any(grupos.values()):
+        return []
+    html_content = f'<h2 style="color:#1a3c5e">Alertas de Licitações{titulo_adicional}</h2>'
+    if grupos['vencidas']:
+        html_content += """<h3 style="color:#c0392b">VENCIDAS</h3><table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:20px">
+        <tr style="background:#ffe1e1"><th>Número</th><th>Empresa</th><th>Objeto</th><th>Vigência</th><th>Dias Vencida</th></tr>"""
+        for l in grupos['vencidas']:
+            emp_nome = empresa_nomes.get(l['empresa'], l['empresa']) if l['empresa'] else '—'
+            html_content += f'<tr><td>{html.escape(l["numero"])}</td><td>{html.escape(emp_nome)}</td><td>{html.escape(l["objeto"])}</td><td>{html.escape(l["fim"])}</td><td>{l["dias"]} dia(s)</td></tr>'
+        html_content += '</table>'
+    secoes = [
+        ('d35', 'ENTRE 31 E 35 DIAS PARA O VENCIMENTO', '#24527a', '#eef6ff'),
+        ('d30', 'ENTRE 16 E 30 DIAS PARA O VENCIMENTO', '#d4820a', '#fff3cd'),
+        ('d15', 'FALTAM 15 DIAS PARA O VENCIMENTO', '#c0392b', '#ffe1e1'),
+        ('d0_14', 'MENOS DE 15 DIAS PARA O VENCIMENTO — ATENCAO DIARIA', '#b71c1c', '#ffd7d7'),
+    ]
+    for chave, titulo, cor_borda, cor_fundo in secoes:
+        grupo = grupos[chave]
+        if not grupo:
+            continue
+        html_content += f"""<h3 style="color:{cor_borda}">{titulo}</h3>
+        <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:20px">
+        <tr style="background:{cor_fundo}"><th>Número</th><th>Empresa</th><th>Objeto</th><th>Vigência</th><th>Dias</th></tr>"""
+        for l in grupo:
+            emp_nome = empresa_nomes.get(l['empresa'], l['empresa']) if l['empresa'] else '—'
+            html_content += f'<tr><td>{html.escape(l["numero"])}</td><td>{html.escape(emp_nome)}</td><td>{html.escape(l["objeto"])}</td><td>{html.escape(l["fim"])}</td><td>{l["dias"]} dia(s)</td></tr>'
+        html_content += '</table>'
+    return [html_content]
+
+
 def enviar_email(cfg, html, assunto, destinatario):
     msg = MIMEText(html, 'html', 'utf-8')
     msg['Subject'] = assunto
     msg['From'] = cfg['email_remetente']
     msg['To'] = destinatario
     ctx = ssl.create_default_context()
+    smtp_server = cfg.get('smtp_server') or 'smtp.gmail.com'
+    smtp_port = int(cfg.get('smtp_port') or 587)
     try:
-        with smtplib.SMTP(cfg.get('smtp_server', 'smtp.gmail.com'), int(cfg.get('smtp_port', 587))) as server:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.ehlo()
             server.starttls(context=ctx)
+            server.ehlo()
             server.login(cfg['email_remetente'], cfg['email_senha'])
             server.sendmail(msg['From'], [d.strip() for d in destinatario.split(',') if d.strip()], msg.as_string().encode('utf-8'))
     except Exception as e:
@@ -1396,6 +1667,9 @@ def api_enviar_lembrete_pagamentos():
     for dest in destinatarios_data:
         email = dest.get('email', '').strip()
         if not email:
+            continue
+        alertas = dest.get('alertas', [])
+        if alertas and 'pagamentos' not in alertas:
             continue
         empresa_ids = dest.get('empresaIds', [])
         dest_nome = dest.get('nome', '')
@@ -1454,6 +1728,9 @@ def api_enviar_alertas_contratos():
         email = dest.get('email', '').strip()
         if not email:
             continue
+        alertas = dest.get('alertas', [])
+        if alertas and 'contratos' not in alertas:
+            continue
         empresa_ids = dest.get('empresaIds', [])
         dest_nome = dest.get('nome', '')
         emp_ids_set = set(empresa_ids) if empresa_ids else None
@@ -1484,6 +1761,139 @@ def api_enviar_alertas_contratos():
     if erros:
         partes.append(f'Erros: {"; ".join(erros)}')
     return jsonify({"ok": True, "msg": '. '.join(partes)})
+
+
+@app.route('/api/enviar-alertas-certidoes', methods=['POST'])
+def api_enviar_alertas_certidoes():
+    if not validate_csrf():
+        return jsonify({"ok": False, "erro": "CSRF invalido"}), 403
+    admin_err = require_admin()
+    if admin_err:
+        return admin_err
+    cfg = ler_config()
+    if not cfg.get('email_remetente') or not cfg.get('email_senha'):
+        return jsonify({"ok": False, "erro": "Configure o e-mail primeiro."})
+
+    body = request.get_json(silent=True) or {}
+    empresas_lista = body.get('empresas', [])
+    empresa_nomes = {e['id']: e['nome'] for e in empresas_lista if e.get('id') and e.get('nome')}
+    sectors_lista = body.get('sectors', [])
+    certidoes_data = body.get('certidoes', [])
+    destinatarios_data = body.get('destinatarios', [])
+
+    if not destinatarios_data:
+        return jsonify({"ok": True, "msg": "Nenhum destinatario cadastrado para enviar alertas."})
+
+    hoje = date.today()
+    enviados = 0
+    erros = []
+
+    for dest in destinatarios_data:
+        email = dest.get('email', '').strip()
+        if not email:
+            continue
+        alertas = dest.get('alertas', [])
+        if alertas and 'certidoes' not in alertas:
+            continue
+        setores = dest.get('setores', [])
+        if not dest_em_setores_permitidos(setores, sectors_lista):
+            continue
+        empresa_ids = dest.get('empresaIds', [])
+        dest_nome = dest.get('nome', '')
+        emp_ids_set = set(empresa_ids) if empresa_ids else None
+        emp_certidoes = [c for c in certidoes_data if emp_ids_set is None or (c.get('empresaId') in emp_ids_set or c.get('empresa_id') in emp_ids_set)]
+        grupos = processar_certidoes_alertas(emp_certidoes, hoje)
+        if not any(grupos.values()):
+            continue
+        rotulo = f" - {dest_nome}" if dest_nome else ""
+        regioes = montar_html_certidoes(grupos, empresa_nomes, rotulo)
+        if not regioes:
+            continue
+        emp_html = f"""<html><body style="font-family:Arial,sans-serif;padding:20px">
+        {'<hr style="margin:24px 0">'.join(regioes)}
+        <p style="color:#666;font-size:12px">Gerado em {datetime.now().strftime("%d/%m/%Y %H:%M")}</p></body></html>"""
+        try:
+            enviar_email(cfg, emp_html,
+                         f'Alertas de Certidões{rotulo} - {hoje.strftime("%d/%m/%Y")}',
+                         email)
+            enviados += 1
+        except Exception as e:
+            erros.append(f"{email}: {e}")
+
+    if enviados == 0 and not erros:
+        return jsonify({"ok": True, "msg": "Nenhuma certidão pendente para os destinatarios cadastrados."})
+
+    partes = [f'{enviados} e-mail(s) enviado(s)']
+    if erros:
+        partes.append(f'Erros: {"; ".join(erros)}')
+    return jsonify({"ok": True, "msg": '. '.join(partes)})
+
+
+@app.route('/api/enviar-alertas-licitacoes', methods=['POST'])
+def api_enviar_alertas_licitacoes():
+    if not validate_csrf():
+        return jsonify({"ok": False, "erro": "CSRF invalido"}), 403
+    admin_err = require_admin()
+    if admin_err:
+        return admin_err
+    cfg = ler_config()
+    if not cfg.get('email_remetente') or not cfg.get('email_senha'):
+        return jsonify({"ok": False, "erro": "Configure o e-mail primeiro."})
+
+    body = request.get_json(silent=True) or {}
+    empresas_lista = body.get('empresas', [])
+    empresa_nomes = {e['id']: e['nome'] for e in empresas_lista if e.get('id') and e.get('nome')}
+    sectors_lista = body.get('sectors', [])
+    licitacoes_data = body.get('licitacoes', [])
+    destinatarios_data = body.get('destinatarios', [])
+
+    if not destinatarios_data:
+        return jsonify({"ok": True, "msg": "Nenhum destinatario cadastrado para enviar alertas."})
+
+    hoje = date.today()
+    enviados = 0
+    erros = []
+
+    for dest in destinatarios_data:
+        email = dest.get('email', '').strip()
+        if not email:
+            continue
+        alertas = dest.get('alertas', [])
+        if alertas and 'licitacoes' not in alertas:
+            continue
+        setores = dest.get('setores', [])
+        if not dest_em_setores_permitidos(setores, sectors_lista):
+            continue
+        empresa_ids = dest.get('empresaIds', [])
+        dest_nome = dest.get('nome', '')
+        emp_ids_set = set(empresa_ids) if empresa_ids else None
+        emp_licitacoes = [l for l in licitacoes_data if emp_ids_set is None or (l.get('empresaId') in emp_ids_set or l.get('empresa_id') in emp_ids_set)]
+        grupos = processar_licitacoes_alertas(emp_licitacoes, hoje)
+        if not any(grupos.values()):
+            continue
+        rotulo = f" - {dest_nome}" if dest_nome else ""
+        regioes = montar_html_licitacoes(grupos, empresa_nomes, rotulo)
+        if not regioes:
+            continue
+        emp_html = f"""<html><body style="font-family:Arial,sans-serif;padding:20px">
+        {'<hr style="margin:24px 0">'.join(regioes)}
+        <p style="color:#666;font-size:12px">Gerado em {datetime.now().strftime("%d/%m/%Y %H:%M")}</p></body></html>"""
+        try:
+            enviar_email(cfg, emp_html,
+                         f'Alertas de Licitações{rotulo} - {hoje.strftime("%d/%m/%Y")}',
+                         email)
+            enviados += 1
+        except Exception as e:
+            erros.append(f"{email}: {e}")
+
+    if enviados == 0 and not erros:
+        return jsonify({"ok": True, "msg": "Nenhuma licitação pendente para os destinatarios cadastrados."})
+
+    partes = [f'{enviados} e-mail(s) enviado(s)']
+    if erros:
+        partes.append(f'Erros: {"; ".join(erros)}')
+    return jsonify({"ok": True, "msg": '. '.join(partes)})
+
 
 # ─── RESUMO DE CONTRATOS VIA GEMINI ────────────────────────────────────
 
@@ -1903,7 +2313,7 @@ def _resposta_offline(pergunta):
 import threading
 
 def _enviar_emails_automaticos():
-    """Envia lembretes de pagamentos e alertas de contratos automaticamente."""
+    """Envia lembretes de pagamentos, alertas de contratos, certidoes e licitacoes automaticamente."""
     with app.app_context():
         try:
             cfg = ler_config()
@@ -1918,8 +2328,11 @@ def _enviar_emails_automaticos():
 
             contratos = query_db("SELECT * FROM contracts")
             pagamentos = query_db("SELECT * from payments")
+            certidoes_db = query_db("SELECT * FROM certidoes")
+            licitacoes_db = query_db("SELECT * FROM licitacoes")
             empresas = query_db("SELECT * FROM empresas")
             empresa_nomes = {e['id']: e['nome'] for e in empresas if e.get('id') and e.get('nome')}
+            sectors_lista = query_db("SELECT * FROM sectors")
             hoje = date.today()
 
             enviados = 0
@@ -1929,6 +2342,14 @@ def _enviar_emails_automaticos():
             for dest in destinatarios:
                 email = (dest.get('email') or '').strip()
                 if not email:
+                    continue
+                alertas = dest.get('alertas') or ''
+                if isinstance(alertas, str):
+                    try:
+                        alertas = json.loads(alertas)
+                    except Exception:
+                        alertas = [a.strip() for a in alertas.split(',') if a.strip()]
+                if alertas and 'pagamentos' not in alertas:
                     continue
                 empresa_ids = dest.get('empresaIds') or dest.get('empresa_ids') or ''
                 if isinstance(empresa_ids, str):
@@ -1958,6 +2379,14 @@ def _enviar_emails_automaticos():
                 email = (dest.get('email') or '').strip()
                 if not email:
                     continue
+                alertas = dest.get('alertas') or ''
+                if isinstance(alertas, str):
+                    try:
+                        alertas = json.loads(alertas)
+                    except Exception:
+                        alertas = [a.strip() for a in alertas.split(',') if a.strip()]
+                if alertas and 'contratos' not in alertas:
+                    continue
                 empresa_ids = dest.get('empresaIds') or dest.get('empresa_ids') or ''
                 if isinstance(empresa_ids, str):
                     empresa_ids = [int(x.strip()) for x in empresa_ids.split(',') if x.strip().isdigit()]
@@ -1982,6 +2411,104 @@ def _enviar_emails_automaticos():
                     enviados += 1
                 except Exception as e:
                     erros.append(f"Contratos {email}: {e}")
+
+            # Alertas de certidoes
+            for dest in destinatarios:
+                email = (dest.get('email') or '').strip()
+                if not email:
+                    continue
+                alertas = dest.get('alertas') or ''
+                if isinstance(alertas, str):
+                    try:
+                        alertas = json.loads(alertas)
+                    except Exception:
+                        alertas = [a.strip() for a in alertas.split(',') if a.strip()]
+                if alertas and 'certidoes' not in alertas:
+                    continue
+                setores = dest.get('setores') or dest.get('setores') or ''
+                if isinstance(setores, str):
+                    try:
+                        setores = json.loads(setores)
+                    except Exception:
+                        setores = [s.strip() for s in setores.split(',') if s.strip()]
+                if not dest_em_setores_permitidos(setores, sectors_lista):
+                    continue
+                empresa_ids = dest.get('empresaIds') or dest.get('empresa_ids') or ''
+                if isinstance(empresa_ids, str):
+                    try:
+                        empresa_ids = json.loads(empresa_ids)
+                    except Exception:
+                        empresa_ids = [x.strip() for x in empresa_ids.split(',') if x.strip()]
+                        empresa_ids = [int(x) for x in empresa_ids if x.isdigit()]
+                dest_nome = dest.get('nome', '')
+                emp_ids_set = set(empresa_ids) if empresa_ids else None
+                emp_certidoes = [c for c in certidoes_db if emp_ids_set is None or c.get('empresa_id') in emp_ids_set]
+                grupos = processar_certidoes_alertas(emp_certidoes, hoje)
+                if not any(grupos.values()):
+                    continue
+                rotulo = f" - {dest_nome}" if dest_nome else ""
+                regioes = montar_html_certidoes(grupos, empresa_nomes, rotulo)
+                if not regioes:
+                    continue
+                emp_html = f"""<html><body style="font-family:Arial,sans-serif;padding:20px">
+                {'<hr style="margin:24px 0">'.join(regioes)}
+                <p style="color:#666;font-size:12px">Gerado automaticamente em {datetime.now().strftime("%d/%m/%Y %H:%M")}</p></body></html>"""
+                try:
+                    enviar_email(cfg, emp_html,
+                                 f'Alertas de Certidões{rotulo} - {hoje.strftime("%d/%m/%Y")}',
+                                 email)
+                    enviados += 1
+                except Exception as e:
+                    erros.append(f"Certidões {email}: {e}")
+
+            # Alertas de licitacoes
+            for dest in destinatarios:
+                email = (dest.get('email') or '').strip()
+                if not email:
+                    continue
+                alertas = dest.get('alertas') or ''
+                if isinstance(alertas, str):
+                    try:
+                        alertas = json.loads(alertas)
+                    except Exception:
+                        alertas = [a.strip() for a in alertas.split(',') if a.strip()]
+                if alertas and 'licitacoes' not in alertas:
+                    continue
+                setores = dest.get('setores') or ''
+                if isinstance(setores, str):
+                    try:
+                        setores = json.loads(setores)
+                    except Exception:
+                        setores = [s.strip() for s in setores.split(',') if s.strip()]
+                if not dest_em_setores_permitidos(setores, sectors_lista):
+                    continue
+                empresa_ids = dest.get('empresaIds') or dest.get('empresa_ids') or ''
+                if isinstance(empresa_ids, str):
+                    try:
+                        empresa_ids = json.loads(empresa_ids)
+                    except Exception:
+                        empresa_ids = [x.strip() for x in empresa_ids.split(',') if x.strip()]
+                        empresa_ids = [int(x) for x in empresa_ids if x.isdigit()]
+                dest_nome = dest.get('nome', '')
+                emp_ids_set = set(empresa_ids) if empresa_ids else None
+                emp_licitacoes = [l for l in licitacoes_db if emp_ids_set is None or l.get('empresa_id') in emp_ids_set]
+                grupos = processar_licitacoes_alertas(emp_licitacoes, hoje)
+                if not any(grupos.values()):
+                    continue
+                rotulo = f" - {dest_nome}" if dest_nome else ""
+                regioes = montar_html_licitacoes(grupos, empresa_nomes, rotulo)
+                if not regioes:
+                    continue
+                emp_html = f"""<html><body style="font-family:Arial,sans-serif;padding:20px">
+                {'<hr style="margin:24px 0">'.join(regioes)}
+                <p style="color:#666;font-size:12px">Gerado automaticamente em {datetime.now().strftime("%d/%m/%Y %H:%M")}</p></body></html>"""
+                try:
+                    enviar_email(cfg, emp_html,
+                                 f'Alertas de Licitações{rotulo} - {hoje.strftime("%d/%m/%Y")}',
+                                 email)
+                    enviados += 1
+                except Exception as e:
+                    erros.append(f"Licitações {email}: {e}")
 
             if enviados > 0:
                 print(f"[EMAIL AUTO] {enviados} e-mail(s) enviado(s) as {datetime.now().strftime('%H:%M')}")
