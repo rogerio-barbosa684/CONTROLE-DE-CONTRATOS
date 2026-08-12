@@ -3,9 +3,23 @@ import jwt from 'jsonwebtoken'
 import nodemailer from 'nodemailer'
 import crypto from 'crypto'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'contratos_jwt_secret_2026_ideal_alimentacao'
+const JWT_SECRET = process.env.JWT_SECRET
 
 const forgotPasswordAttempts = new Map()
+const loginAttempts = new Map()
+
+function checkLoginRateLimit(ip) {
+  const now = Date.now()
+  const windowMs = 60 * 1000
+  const maxAttempts = 10
+  const record = loginAttempts.get(ip)
+  if (!record || (now - record.start) > windowMs) {
+    loginAttempts.set(ip, { start: now, count: 1 })
+    return true
+  }
+  record.count++
+  return record.count <= maxAttempts
+}
 function checkForgotPasswordRateLimit(ip) {
   const now = Date.now()
   const windowMs = 60 * 1000
@@ -23,8 +37,11 @@ function checkForgotPasswordRateLimit(ip) {
 let _supabase = null
 function getSupabase() {
   if (_supabase) return _supabase
-  const url = process.env.SUPABASE_URL || 'https://pgehubucomamrmdgpvhn.supabase.co'
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || 'sb_secret_HRHEyYIEUW0BK7-ZOAS9rA_OQiyyfLm'
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) {
+    throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY devem estar configurados nas variaveis de ambiente do Netlify.')
+  }
   _supabase = createClient(url, key)
   return _supabase
 }
@@ -438,20 +455,6 @@ export async function handler(event) {
   const parts = route.split('/')
 
   try {
-    // ─── INIT-ADMIN (temporario - criar admin com pbkdf2) ────────────────
-    if (route === 'init-admin' && httpMethod === 'POST') {
-      const hash = await hashPassword('Admin@123456')
-      const { data: existing } = await getSupabase().from('users').select('id').eq('username', 'admin').single()
-      if (existing) {
-        await getSupabase().from('users').update({ password_hash: hash }).eq('username', 'admin')
-        return json({ ok: true, msg: 'Admin atualizado', hash })
-      } else {
-        const { error } = await getSupabase().from('users').insert({ username: 'admin', full_name: 'Administrador', password_hash: hash, role: 'admin', active: 1 })
-        if (error) return json({ ok: false, erro: error.message }, 500)
-        return json({ ok: true, msg: 'Admin criado', hash })
-      }
-    }
-
     // ─── CSRF TOKEN ──────────────────────────────────────────────────────
     if (route === 'csrf-token' && httpMethod === 'GET') {
       return json({ csrf_token: csrfToken })
@@ -466,6 +469,13 @@ export async function handler(event) {
 
     // ─── LOGIN ───────────────────────────────────────────────────────────
     if (route === 'login' && httpMethod === 'POST') {
+      const clientIp = headers['x-forwarded-for'] || headers['client-ip'] || 'unknown'
+      if (!checkLoginRateLimit(clientIp)) {
+        return json({ ok: false, erro: 'Muitas tentativas. Aguarde 1 minuto.' }, 429)
+      }
+      if (!JWT_SECRET) {
+        return json({ ok: false, erro: 'JWT_SECRET nao configurado no servidor.' }, 500)
+      }
       const { username, password } = body
       const { data: dbUser } = await getSupabase().from('users').select('*').eq('username', username).eq('active', 1).single()
       if (!dbUser || !(await checkPassword(password, dbUser.password_hash))) {
@@ -839,13 +849,15 @@ export async function handler(event) {
       if (httpMethod === 'GET') {
         const authErr = requireAuth(user)
         if (authErr) return authErr
-        const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios] = await Promise.all([
+        const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios, certidoes, licitacoes] = await Promise.all([
           getSupabase().from('contracts').select('*').order('created_at', { ascending: false }),
           getSupabase().from('payments').select('*').order('vencimento'),
           getSupabase().from('users').select('id, username, full_name, role, created_at').order('id'),
           getSupabase().from('additives').select('*').order('created_at'),
           getSupabase().from('companies').select('*').order('nome'),
           getSupabase().from('destinatarios').select('*').order('criado_em'),
+          getSupabase().from('certidoes').select('*').order('created_at', { ascending: false }),
+          getSupabase().from('licitacoes').select('*').order('created_at', { ascending: false }),
         ])
         return json({
           contratos: contratos.data || [],
@@ -853,7 +865,9 @@ export async function handler(event) {
           usuarios: usuarios.data || [],
           aditivos: aditivos.data || [],
           empresas: empresas.data || [],
-          destinatarios: destinatarios.data || []
+          destinatarios: destinatarios.data || [],
+          certidoes: certidoes.data || [],
+          licitacoes: licitacoes.data || []
         })
       }
 
@@ -964,6 +978,49 @@ export async function handler(event) {
           importados.destinatarios = (importados.destinatarios || 0) + 1
         }
 
+        for (const ct of (body.certidoes || [])) {
+          const ctid = (ct.id || '').trim()
+          const tipo = (ct.tipo || '').trim()
+          if (!ctid || !tipo) { importados.ignorados++; continue }
+          const { data: existing } = await getSupabase().from('certidoes').select('id').eq('id', ctid).single()
+          const vals = {
+            empresa_id: ct.empresaId, tipo, data_emissao: ct.dataEmissao || null,
+            data_validade: ct.dataValidade || null, status: ct.status || 'pendente',
+            arquivo: ct.arquivo ? JSON.stringify(ct.arquivo) : null,
+            obs: (ct.obs || '').trim(), updated_at: new Date().toISOString()
+          }
+          if (existing) {
+            await getSupabase().from('certidoes').update(vals).eq('id', ctid)
+          } else {
+            await getSupabase().from('certidoes').insert({ id: ctid, ...vals, created_by: 1 })
+          }
+          importados.certidoes = (importados.certidoes || 0) + 1
+        }
+
+        for (const lc of (body.licitacoes || [])) {
+          const lcid = (lc.id || '').trim()
+          const numero = (lc.numeroLicitacao || '').trim()
+          if (!lcid || !numero) { importados.ignorados++; continue }
+          const { data: existing } = await getSupabase().from('licitacoes').select('id').eq('id', lcid).single()
+          const vals = {
+            numero_licitacao: numero, edital: (lc.edital || '').trim(),
+            objeto: (lc.objeto || '').trim(), empresa_id: lc.empresaId || null,
+            contrato_id: lc.contratoId || null, valor: safeFloat(lc.valor),
+            data_homologacao: lc.dataHomologacao || null,
+            data_inicio: lc.dataInicio || null, data_fim: lc.dataFim || null,
+            status: lc.status || 'em_andamento',
+            arquivo_edital: lc.arquivoEdital ? JSON.stringify(lc.arquivoEdital) : null,
+            arquivo_contrato: lc.arquivoContrato ? JSON.stringify(lc.arquivoContrato) : null,
+            obs: (lc.obs || '').trim(), updated_at: new Date().toISOString()
+          }
+          if (existing) {
+            await getSupabase().from('licitacoes').update(vals).eq('id', lcid)
+          } else {
+            await getSupabase().from('licitacoes').insert({ id: lcid, ...vals, created_by: 1 })
+          }
+          importados.licitacoes = (importados.licitacoes || 0) + 1
+        }
+
         await audit(user.id, 'SYNC', 'system', '', `Sincronizacao concluida: ${JSON.stringify(importados)}`)
         return json({ ok: true, importados })
       }
@@ -971,7 +1028,6 @@ export async function handler(event) {
 
     // ─── ASSISTENTE VIRTUAL ─────────────────────────────────────────────────
     if (route === 'assistente' && httpMethod === 'POST') {
-      const body = await readBody(event)
       const pergunta = (body.pergunta || '').trim()
       if (!pergunta) return json({ ok: false, erro: 'Pergunta vazia' }, 400)
 
@@ -999,6 +1055,138 @@ export async function handler(event) {
         console.error('Gemini assistente falhou:', e.message)
       }
       return json({ ok: true, resposta: respostaOffline(pergunta) })
+    }
+
+    // ─── CERTIDOES ─────────────────────────────────────────────────────────
+    if (route === 'certidoes' && httpMethod === 'GET') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      const { data } = await getSupabase().from('certidoes').select('*').order('created_at', { ascending: false })
+      return json(data || [])
+    }
+
+    if (route === 'certidoes' && httpMethod === 'POST') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const cid = body.id || crypto.randomUUID()
+      const empresaId = (body.empresa_id || '').trim()
+      const tipo = (body.tipo || '').trim()
+      if (!empresaId || !tipo) return json({ ok: false, erro: 'Empresa e tipo sao obrigatorios.' }, 400)
+      const { error } = await getSupabase().from('certidoes').insert({
+        id: cid, empresa_id: empresaId, tipo,
+        data_emissao: body.data_emissao || null,
+        data_validade: body.data_validade || null,
+        status: body.status || 'pendente',
+        arquivo: body.arquivo || null,
+        obs: (body.obs || '').trim(),
+        created_by: user.id
+      })
+      if (error) return json({ ok: false, erro: error.message }, 500)
+      await audit(user.id, 'CREATE', 'certidao', cid, `Certidao ${tipo} criada`)
+      return json({ ok: true, id: cid })
+    }
+
+    if (parts[0] === 'certidoes' && parts[1] && httpMethod === 'PUT') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const upd = { updated_at: new Date().toISOString() }
+      if (body.empresa_id !== undefined) upd.empresa_id = body.empresa_id
+      if (body.tipo !== undefined) upd.tipo = body.tipo
+      if (body.data_emissao !== undefined) upd.data_emissao = body.data_emissao
+      if (body.data_validade !== undefined) upd.data_validade = body.data_validade
+      if (body.status !== undefined) upd.status = body.status
+      if (body.arquivo !== undefined) upd.arquivo = body.arquivo
+      if (body.obs !== undefined) upd.obs = body.obs
+      await getSupabase().from('certidoes').update(upd).eq('id', parts[1])
+      await audit(user.id, 'UPDATE', 'certidao', parts[1], `Certidao atualizada`)
+      return json({ ok: true })
+    }
+
+    if (parts[0] === 'certidoes' && parts[1] && httpMethod === 'DELETE') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      await getSupabase().from('certidoes').delete().eq('id', parts[1])
+      await audit(user.id, 'DELETE', 'certidao', parts[1], `Certidao excluida`)
+      return json({ ok: true })
+    }
+
+    // ─── LICITACOES ────────────────────────────────────────────────────────
+    if (route === 'licitacoes' && httpMethod === 'GET') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      const { data } = await getSupabase().from('licitacoes').select('*').order('created_at', { ascending: false })
+      return json(data || [])
+    }
+
+    if (route === 'licitacoes' && httpMethod === 'POST') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const lid = body.id || crypto.randomUUID()
+      const numero = (body.numero_licitacao || '').trim()
+      const objeto = (body.objeto || '').trim()
+      if (!numero || !objeto) return json({ ok: false, erro: 'Numero da licitacao e objeto sao obrigatorios.' }, 400)
+      const { error } = await getSupabase().from('licitacoes').insert({
+        id: lid, numero_licitacao: numero, edital: (body.edital || '').trim(),
+        objeto, empresa_id: body.empresa_id || null,
+        contrato_id: body.contrato_id || null, valor: safeFloat(body.valor),
+        data_homologacao: body.data_homologacao || null,
+        data_inicio: body.data_inicio || null, data_fim: body.data_fim || null,
+        status: body.status || 'em_andamento',
+        arquivo_edital: body.arquivo_edital || null,
+        arquivo_contrato: body.arquivo_contrato || null,
+        obs: (body.obs || '').trim(), created_by: user.id
+      })
+      if (error) return json({ ok: false, erro: error.message }, 500)
+      await audit(user.id, 'CREATE', 'licitacao', lid, `Licitacao ${numero} criada`)
+      return json({ ok: true, id: lid })
+    }
+
+    if (parts[0] === 'licitacoes' && parts[1] && httpMethod === 'PUT') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const upd = { updated_at: new Date().toISOString() }
+      if (body.numero_licitacao !== undefined) upd.numero_licitacao = body.numero_licitacao
+      if (body.edital !== undefined) upd.edital = body.edital
+      if (body.objeto !== undefined) upd.objeto = body.objeto
+      if (body.empresa_id !== undefined) upd.empresa_id = body.empresa_id
+      if (body.contrato_id !== undefined) upd.contrato_id = body.contrato_id
+      if (body.valor !== undefined) upd.valor = safeFloat(body.valor)
+      if (body.data_homologacao !== undefined) upd.data_homologacao = body.data_homologacao
+      if (body.data_inicio !== undefined) upd.data_inicio = body.data_inicio
+      if (body.data_fim !== undefined) upd.data_fim = body.data_fim
+      if (body.status !== undefined) upd.status = body.status
+      if (body.arquivo_edital !== undefined) upd.arquivo_edital = body.arquivo_edital
+      if (body.arquivo_contrato !== undefined) upd.arquivo_contrato = body.arquivo_contrato
+      if (body.obs !== undefined) upd.obs = body.obs
+      await getSupabase().from('licitacoes').update(upd).eq('id', parts[1])
+      await audit(user.id, 'UPDATE', 'licitacao', parts[1], `Licitacao atualizada`)
+      return json({ ok: true })
+    }
+
+    if (parts[0] === 'licitacoes' && parts[1] && httpMethod === 'DELETE') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      await getSupabase().from('licitacoes').delete().eq('id', parts[1])
+      await audit(user.id, 'DELETE', 'licitacao', parts[1], `Licitacao excluida`)
+      return json({ ok: true })
     }
 
     // ─── 404 ─────────────────────────────────────────────────────────────

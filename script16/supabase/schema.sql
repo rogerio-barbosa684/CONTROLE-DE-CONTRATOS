@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'user',
   active INTEGER NOT NULL DEFAULT 1,
+  password_changed_at TEXT,
   created_at TEXT NOT NULL DEFAULT (now()::text)
 );
 
@@ -17,25 +18,10 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS password_resets (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  token TEXT NOT NULL,
+  token TEXT UNIQUE NOT NULL,
   used INTEGER NOT NULL DEFAULT 0,
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (now()::text)
-);
-
--- Sectors
-CREATE TABLE IF NOT EXISTS sectors (
-  id TEXT PRIMARY KEY,
-  nome TEXT NOT NULL,
-  active INTEGER NOT NULL DEFAULT 1,
-  criado_em TEXT NOT NULL DEFAULT (now()::text)
-);
-
--- User-Sector access
-CREATE TABLE IF NOT EXISTS user_setores (
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  setor_id TEXT NOT NULL REFERENCES sectors(id) ON DELETE CASCADE,
-  PRIMARY KEY (user_id, setor_id)
 );
 
 -- Companies
@@ -69,6 +55,7 @@ CREATE TABLE IF NOT EXISTS contracts (
   active INTEGER NOT NULL DEFAULT 1,
   forma_pagamento TEXT,
   arquivo_contrato TEXT,
+  resumo TEXT,
   created_by INTEGER,
   created_at TEXT NOT NULL DEFAULT (now()::text),
   updated_at TEXT
@@ -104,6 +91,7 @@ CREATE TABLE IF NOT EXISTS additives (
   acrescimo_valor REAL,
   descricao TEXT NOT NULL,
   arquivo_contrato TEXT,
+  resumo TEXT,
   created_by INTEGER,
   created_at TEXT NOT NULL DEFAULT (now()::text)
 );
@@ -125,6 +113,8 @@ CREATE TABLE IF NOT EXISTS destinatarios (
   email TEXT NOT NULL,
   nome TEXT DEFAULT '',
   empresa_ids TEXT DEFAULT '[]',
+  setores TEXT DEFAULT '[]',
+  alertas TEXT DEFAULT '["contratos","pagamentos","certidoes","licitacoes"]',
   criado_em TEXT NOT NULL DEFAULT (now()::text)
 );
 
@@ -138,11 +128,52 @@ CREATE TABLE IF NOT EXISTS email_config (
   email_destinatario TEXT DEFAULT ''
 );
 
--- Insert initial admin user (password will be set by the API on first run)
-INSERT INTO users (username, full_name, password_hash, role)
-VALUES ('admin', 'Administrador', '$2b$12$placeholder', 'admin')
-ON CONFLICT (username) DO NOTHING;
+-- Sectors
+CREATE TABLE IF NOT EXISTS sectors (
+  id TEXT PRIMARY KEY,
+  nome TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  criado_em TEXT NOT NULL DEFAULT (now()::text)
+);
 
--- Insert placeholder email config
-INSERT INTO email_config (id) VALUES (1)
-ON CONFLICT (id) DO NOTHING;
+-- User-Sectors (vinculo usuario-setor)
+CREATE TABLE IF NOT EXISTS user_setores (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  setor_id TEXT NOT NULL REFERENCES sectors(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, setor_id)
+);
+
+-- Certidoes (Controle de Regularidade)
+CREATE TABLE IF NOT EXISTS certidoes (
+  id TEXT PRIMARY KEY,
+  empresa_id TEXT DEFAULT '',
+  tipo TEXT DEFAULT '',
+  data_emissao TEXT DEFAULT '',
+  data_validade TEXT DEFAULT '',
+  status TEXT DEFAULT 'pendente',
+  arquivo_nome TEXT DEFAULT '',
+  arquivo_dados TEXT DEFAULT '',
+  observacoes TEXT DEFAULT '',
+  criado_em TEXT NOT NULL DEFAULT (now()::text)
+);
+
+-- Licitacoes
+CREATE TABLE IF NOT EXISTS licitacoes (
+  id TEXT PRIMARY KEY,
+  empresa_id TEXT DEFAULT '',
+  numero_licitacao TEXT DEFAULT '',
+  edital TEXT DEFAULT '',
+  objeto TEXT DEFAULT '',
+  contrato_id TEXT DEFAULT '',
+  valor REAL DEFAULT 0,
+  data_homologacao TEXT DEFAULT '',
+  data_inicio TEXT DEFAULT '',
+  data_fim TEXT DEFAULT '',
+  status TEXT DEFAULT 'em_andamento',
+  arquivo_edital_nome TEXT DEFAULT '',
+  arquivo_edital_dados TEXT DEFAULT '',
+  arquivo_contrato_nome TEXT DEFAULT '',
+  arquivo_contrato_dados TEXT DEFAULT '',
+  observacoes TEXT DEFAULT '',
+  criado_em TEXT NOT NULL DEFAULT (now()::text)
+);
