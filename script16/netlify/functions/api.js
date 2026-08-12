@@ -111,28 +111,58 @@ function hashPassword(password) {
 
 function checkPassword(password, hash) {
   return new Promise((resolve, reject) => {
-    if (!hash || !hash.includes('$')) return resolve(false)
-    const parts = hash.split('$')
-    if (parts.length < 3) return resolve(false)
+    if (!hash) return resolve(false)
+
+    // Formato werkzeug: pbkdf2:sha256:600000$<base64salt>$<base64hash>
+    if (hash.startsWith('pbkdf2:')) {
+      try {
+        const parts = hash.split('$')
+        if (parts.length < 3) return resolve(false)
+        const salt = Buffer.from(parts[1], 'base64')
+        const storedHash = Buffer.from(parts[2], 'base64')
+        const iterations = parseInt(hash.split(':')[2]) || 600000
+        crypto.pbkdf2(password, salt, iterations, storedHash.length, 'sha256', (err, key) => {
+          if (err) reject(err)
+          else resolve(key.equals(storedHash))
+        })
+      } catch { resolve(false) }
+      return
+    }
+
+    // Formato werkzeug: scrypt:32768:8:1$<base64salt>$<base64hash>
     if (hash.startsWith('scrypt:')) {
-      const params = parts[0].split(':')
-      const N = parseInt(params[1]) || 32768
-      const r = parseInt(params[2]) || 8
-      const p = parseInt(params[3]) || 1
-      const salt = parts[1]
-      const storedHash = parts[2]
-      crypto.scrypt(password, salt, 64, { N, r, p }, (err, key) => {
-        if (err) reject(err)
-        else resolve(key.toString('hex') === storedHash)
-      })
-    } else {
+      try {
+        const parts = hash.split('$')
+        if (parts.length < 3) return resolve(false)
+        const params = parts[0].split(':')
+        const N = parseInt(params[1]) || 32768
+        const r = parseInt(params[2]) || 8
+        const p = parseInt(params[3]) || 1
+        const salt = Buffer.from(parts[1], 'base64')
+        const storedHash = Buffer.from(parts[2], 'base64')
+        const maxMem = 16 * 1024 * 1024
+        crypto.scrypt(password, salt, storedHash.length, { N, r, p, maxmem: maxMem }, (err, key) => {
+          if (err) reject(err)
+          else resolve(key.equals(storedHash))
+        })
+      } catch { resolve(false) }
+      return
+    }
+
+    // Formato api.js: pbkdf2_sha256$<hexsalt>$<hexhash>
+    if (hash.includes('$')) {
+      const parts = hash.split('$')
+      if (parts.length < 3) return resolve(false)
       const salt = parts[1]
       const storedHash = parts[2]
       crypto.pbkdf2(password, salt, 310000, 32, 'sha256', (err, key) => {
         if (err) reject(err)
         else resolve(key.toString('hex') === storedHash)
       })
+      return
     }
+
+    resolve(false)
   })
 }
 
@@ -149,15 +179,8 @@ function validateCsrf(user, bodyCsrf) {
 }
 
 function requireAdmin(user) {
-  if (!user || (user.role !== 'admin' && user.role !== 'setor_admin')) {
-    return json({ ok: false, erro: 'Acesso restrito ao administrador' }, 403)
-  }
-  return null
-}
-
-function requireGlobalAdmin(user) {
   if (!user || user.role !== 'admin') {
-    return json({ ok: false, erro: 'Acesso restrito ao administrador global' }, 403)
+    return json({ ok: false, erro: 'Acesso restrito ao administrador' }, 403)
   }
   return null
 }
@@ -415,6 +438,20 @@ export async function handler(event) {
   const parts = route.split('/')
 
   try {
+    // ─── INIT-ADMIN (temporario - criar admin com pbkdf2) ────────────────
+    if (route === 'init-admin' && httpMethod === 'POST') {
+      const hash = await hashPassword('Admin@123456')
+      const { data: existing } = await getSupabase().from('users').select('id').eq('username', 'admin').single()
+      if (existing) {
+        await getSupabase().from('users').update({ password_hash: hash }).eq('username', 'admin')
+        return json({ ok: true, msg: 'Admin atualizado', hash })
+      } else {
+        const { error } = await getSupabase().from('users').insert({ username: 'admin', full_name: 'Administrador', password_hash: hash, role: 'admin', active: 1 })
+        if (error) return json({ ok: false, erro: error.message }, 500)
+        return json({ ok: true, msg: 'Admin criado', hash })
+      }
+    }
+
     // ─── CSRF TOKEN ──────────────────────────────────────────────────────
     if (route === 'csrf-token' && httpMethod === 'GET') {
       return json({ csrf_token: csrfToken })
@@ -457,28 +494,6 @@ export async function handler(event) {
       return json({ ok: true }, 200, {
         'Set-Cookie': 'token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'
       })
-    }
-
-    // ─── CHANGE PASSWORD ─────────────────────────────────────────────────
-    if (route === 'change-password' && httpMethod === 'POST') {
-      if (!user) return json({ ok: false, erro: 'Nao autenticado' }, 401)
-      if (!validateCsrf(user, body.csrf_token)) return json({ ok: false, erro: 'CSRF invalido' }, 403)
-      const { current_password, new_password } = body
-      if (!current_password || !new_password) return json({ ok: false, erro: 'Senha atual e nova senha sao obrigatorias.' }, 400)
-      const { data: dbUser } = await getSupabase().from('users').select('*').eq('id', user.id).single()
-      if (!dbUser) return json({ ok: false, erro: 'Usuario nao encontrado.' }, 400)
-      const valid = await hashPassword(current_password)
-      const pwHash = dbUser.password_hash || ''
-      const bcryptValid = await bcrypt.compare(current_password, pwHash).catch(() => false)
-      if (!bcryptValid) return json({ ok: false, erro: 'Senha atual incorreta.' }, 400)
-      if (new_password.length < 8) return json({ ok: false, erro: 'Nova senha deve ter no minimo 8 caracteres.' }, 400)
-      if (!/[A-Z]/.test(new_password)) return json({ ok: false, erro: 'Nova senha deve conter pelo menos 1 letra maiuscula.' }, 400)
-      if (!/[a-z]/.test(new_password)) return json({ ok: false, erro: 'Nova senha deve conter pelo menos 1 letra minuscula.' }, 400)
-      if (!/[0-9]/.test(new_password)) return json({ ok: false, erro: 'Nova senha deve conter pelo menos 1 numero.' }, 400)
-      const newHash = await hashPassword(new_password)
-      await getSupabase().from('users').update({ password_hash: newHash, password_changed_at: new Date().toISOString() }).eq('id', user.id)
-      await audit(user.id, 'CHANGE_PASSWORD', 'user', String(user.id), 'Senha alterada pelo proprio usuario')
-      return json({ ok: true, msg: 'Senha alterada com sucesso!' })
     }
 
     // ─── FORGOT PASSWORD ────────────────────────────────────────────────
@@ -767,64 +782,12 @@ export async function handler(event) {
     if (parts[0] === 'companies' && parts[1] && httpMethod === 'DELETE') {
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      const adminErr = requireGlobalAdmin(user)
+      const adminErr = requireAdmin(user)
       if (adminErr) return adminErr
       if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
       await getSupabase().from('companies').delete().eq('id', parts[1])
-      return json({ ok: true })
-    }
-
-    // ─── SECTORS GET ──────────────────────────────────────────────────────
-    if (route === 'sectors' && httpMethod === 'GET') {
-      const { data } = await getSupabase().from('sectors').select('*').order('nome')
-      return json(data || [])
-    }
-
-    // ─── SECTORS POST ─────────────────────────────────────────────────────
-    if (route === 'sectors' && httpMethod === 'POST') {
-      const authErr = requireGlobalAdmin(user)
-      if (authErr) return authErr
-      if (!validateCsrf(user, body.csrf_token)) {
-        return json({ ok: false, erro: 'CSRF invalido' }, 403)
-      }
-      const sid = body.id || crypto.randomUUID()
-      const nome = (body.nome || '').trim()
-      if (!nome) return json({ ok: false, erro: 'Nome do setor e obrigatorio.' }, 400)
-      const active = body.active !== undefined ? (body.active ? 1 : 0) : 1
-      const { data: existing } = await getSupabase().from('sectors').select('id').eq('id', sid).maybeSingle()
-      if (existing) {
-        await getSupabase().from('sectors').update({ nome, active }).eq('id', sid)
-      } else {
-        await getSupabase().from('sectors').insert({ id: sid, nome, active })
-      }
-      return json({ ok: true, id: sid })
-    }
-
-    // ─── SECTORS PUT ──────────────────────────────────────────────────────
-    if (parts[0] === 'sectors' && parts[1] && httpMethod === 'PUT') {
-      const authErr = requireGlobalAdmin(user)
-      if (authErr) return authErr
-      if (!validateCsrf(user, body.csrf_token)) {
-        return json({ ok: false, erro: 'CSRF invalido' }, 403)
-      }
-      const upd = {}
-      if (body.active !== undefined) upd.active = body.active ? 1 : 0
-      if (body.nome !== undefined) upd.nome = (body.nome || '').trim()
-      await getSupabase().from('sectors').update(upd).eq('id', parts[1])
-      return json({ ok: true })
-    }
-
-    // ─── SECTORS DELETE ───────────────────────────────────────────────────
-    if (parts[0] === 'sectors' && parts[1] && httpMethod === 'DELETE') {
-      const authErr = requireGlobalAdmin(user)
-      if (authErr) return authErr
-      if (!validateCsrf(user, body.csrf_token)) {
-        return json({ ok: false, erro: 'CSRF invalido' }, 403)
-      }
-      await getSupabase().from('user_setores').delete().eq('setor_id', parts[1])
-      await getSupabase().from('sectors').delete().eq('id', parts[1])
       return json({ ok: true })
     }
 
@@ -845,7 +808,7 @@ export async function handler(event) {
     if (parts[0] === 'contracts' && parts[1] && httpMethod === 'DELETE') {
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      const adminErr = requireGlobalAdmin(user)
+      const adminErr = requireAdmin(user)
       if (adminErr) return adminErr
       if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
@@ -861,7 +824,7 @@ export async function handler(event) {
     if (parts[0] === 'payments' && parts[1] && httpMethod === 'DELETE') {
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      const adminErr = requireGlobalAdmin(user)
+      const adminErr = requireAdmin(user)
       if (adminErr) return adminErr
       if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
@@ -876,14 +839,13 @@ export async function handler(event) {
       if (httpMethod === 'GET') {
         const authErr = requireAuth(user)
         if (authErr) return authErr
-        const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios, sectors] = await Promise.all([
+        const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios] = await Promise.all([
           getSupabase().from('contracts').select('*').order('created_at', { ascending: false }),
           getSupabase().from('payments').select('*').order('vencimento'),
           getSupabase().from('users').select('id, username, full_name, role, created_at').order('id'),
           getSupabase().from('additives').select('*').order('created_at'),
           getSupabase().from('companies').select('*').order('nome'),
           getSupabase().from('destinatarios').select('*').order('criado_em'),
-          getSupabase().from('sectors').select('*').order('nome'),
         ])
         return json({
           contratos: contratos.data || [],
@@ -891,8 +853,7 @@ export async function handler(event) {
           usuarios: usuarios.data || [],
           aditivos: aditivos.data || [],
           empresas: empresas.data || [],
-          destinatarios: destinatarios.data || [],
-          sectors: sectors.data || []
+          destinatarios: destinatarios.data || []
         })
       }
 
@@ -1001,20 +962,6 @@ export async function handler(event) {
             })
           }
           importados.destinatarios = (importados.destinatarios || 0) + 1
-        }
-
-        for (const s of (body.sectors || [])) {
-          const sid = (s.id || '').trim()
-          const nome = (s.nome || '').trim()
-          if (!sid || !nome) { importados.ignorados = (importados.ignorados || 0) + 1; continue }
-          const active = s.active !== undefined ? (s.active ? 1 : 0) : 1
-          const { data: existing } = await getSupabase().from('sectors').select('id').eq('id', sid).maybeSingle()
-          if (existing) {
-            await getSupabase().from('sectors').update({ nome, active }).eq('id', sid)
-          } else {
-            await getSupabase().from('sectors').insert({ id: sid, nome, active })
-          }
-          importados.sectors = (importados.sectors || 0) + 1
         }
 
         await audit(user.id, 'SYNC', 'system', '', `Sincronizacao concluida: ${JSON.stringify(importados)}`)

@@ -455,22 +455,6 @@ export async function handler(event) {
   const parts = route.split('/')
 
   try {
-    // ─── DEBUG LOGIN ────────────────────────────────────────────────────
-    if (route === 'debug-login' && httpMethod === 'POST') {
-      const { username, password } = body
-      const { data: dbUser, error: dbErr } = await getSupabase().from('users').select('id, username, active, password_hash').eq('username', username || '').single()
-      const pwOk = dbUser ? await checkPassword(password || '', dbUser.password_hash).catch(e => 'error: ' + e.message) : false
-      return json({
-        userFound: !!dbUser,
-        dbError: dbErr?.message || null,
-        active: dbUser?.active,
-        hashPrefix: dbUser?.password_hash?.substring(0, 30),
-        pwMatch: pwOk,
-        jwtSet: !!JWT_SECRET,
-        supabaseUrl: !!process.env.SUPABASE_URL
-      })
-    }
-
     // ─── CSRF TOKEN ──────────────────────────────────────────────────────
     if (route === 'csrf-token' && httpMethod === 'GET') {
       return json({ csrf_token: csrfToken })
