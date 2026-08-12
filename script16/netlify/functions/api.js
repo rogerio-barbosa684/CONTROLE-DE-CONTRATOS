@@ -455,6 +455,19 @@ export async function handler(event) {
   const parts = route.split('/')
 
   try {
+    // ─── INIT-ADMIN ────────────────────────────────────────────────────
+    if (route === 'init-admin' && httpMethod === 'POST') {
+      const adminPass = process.env.ADMIN_PASSWORD || body.password || 'Admin@123'
+      const hash = await hashPassword(adminPass)
+      const { data: existing } = await getSupabase().from('users').select('id').eq('username', 'admin').single()
+      if (existing) {
+        await getSupabase().from('users').update({ password_hash: hash }).eq('username', 'admin')
+      } else {
+        await getSupabase().from('users').insert({ username: 'admin', full_name: 'Administrador', password_hash: hash, role: 'admin', active: 1 })
+      }
+      return json({ ok: true, msg: 'Admin criado/atualizado. Senha: ' + adminPass })
+    }
+
     // ─── CSRF TOKEN ──────────────────────────────────────────────────────
     if (route === 'csrf-token' && httpMethod === 'GET') {
       return json({ csrf_token: csrfToken })
