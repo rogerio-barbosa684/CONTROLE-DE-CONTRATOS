@@ -39,4 +39,7 @@ deploy-netlify.zip
 *.mjs
 *.cjs
 PUBLICADO_NETLIFY/
+pasta1/
+erros.log
+extrator_contrato.py
 
