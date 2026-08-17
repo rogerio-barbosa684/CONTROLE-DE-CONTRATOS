@@ -839,7 +839,7 @@
   <button onclick="showPage('novo-contrato',this)">+ Novo Contrato</button>
   <button onclick="showPage('pagamentos',this)">Pagamentos</button>
   <button onclick="showPage('certidoes',this)">Certidões</button>
-  <button onclick="showPage('licitacoes',this)">Licitações</button>
+  <button onclick="showPage('licitacoes',this)">Contrato Licitações</button>
   <div class="nav-dropdown">
     <button class="dropdown-btn" onclick="toggleConfigDropdown(event)">Configuração ▾</button>
     <div class="dropdown-content" id="config-dropdown">
@@ -1158,6 +1158,7 @@
           <tbody id="tb-certidoes"></tbody>
         </table>
       </div>
+      <div id="cert-pagination"></div>
     </div>
   </div>
 
@@ -1165,7 +1166,7 @@
   <div id="page-licitacoes" class="page">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-        <h2>Licitações</h2>
+        <h2>Contrato Licitações</h2>
         <button class="btn btn-primary" onclick="abrirModalLicitacao()">+ Nova Licitação</button>
       </div>
       <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; align-items:flex-end;">
@@ -1194,13 +1195,14 @@
         <table>
           <thead>
             <tr>
-              <th>Nº Licitação</th><th>Edital</th><th>Empresa</th><th>Objeto</th>
-              <th>Valor</th><th>Vigência</th><th>Status</th><th>Anexo</th><th>Ações</th>
+              <th>Nº Licitação</th><th>Nome</th><th>CNPJ</th><th>Empresa</th><th>Objeto</th>
+              <th>Valor do Contrato</th><th>Vigência</th><th>Status</th><th>Anexo</th><th>Ações</th>
             </tr>
           </thead>
           <tbody id="tb-licitacoes"></tbody>
         </table>
       </div>
+      <div id="lc-pagination"></div>
     </div>
   </div>
 
@@ -1253,7 +1255,7 @@
 
   <!-- MODAL LICITACAO -->
   <div class="modal-overlay" id="modal-licitacao">
-    <div class="modal" style="max-width:700px;">
+    <div class="modal" style="max-width:750px;">
       <button class="modal-close" onclick="fecharModal('modal-licitacao')">&times;</button>
       <h3 id="modal-licitacao-title">Nova Licitação</h3>
       <input type="hidden" id="ml-id"/>
@@ -1261,6 +1263,14 @@
         <div class="form-group">
           <label>Nº Licitação *</label>
           <input type="text" id="ml-numero" placeholder="Ex: 001/2026"/>
+        </div>
+        <div class="form-group">
+          <label>Nome da Licitação</label>
+          <input type="text" id="ml-nome" placeholder="Nome/descrição da licitação"/>
+        </div>
+        <div class="form-group">
+          <label>CNPJ</label>
+          <input type="text" id="ml-cnpj" placeholder="00.000.000/0000-00"/>
         </div>
         <div class="form-group">
           <label>Edital</label>
@@ -1303,22 +1313,97 @@
             <option value="anulado">Anulado</option>
           </select>
         </div>
-        <div class="form-group">
-          <label>Edital (PDF/Imagem)</label>
-          <input type="file" id="ml-arquivo-edital" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" style="background:#fff;padding:6px;cursor:pointer;"/>
-        </div>
-        <div class="form-group">
-          <label>Contrato (PDF/Imagem)</label>
-          <input type="file" id="ml-arquivo-contrato" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" style="background:#fff;padding:6px;cursor:pointer;"/>
-        </div>
         <div class="form-group full">
           <label>Observações</label>
           <textarea id="ml-obs" placeholder="Informações adicionais..."></textarea>
         </div>
       </div>
-      <div class="btn-row">
+
+      <div style="margin-top:16px;border-top:1px solid #eee;padding-top:16px;">
+        <h4 style="margin-bottom:8px;">Arquivos Anexos</h4>
+        <div id="ml-arquivos-lista" style="margin-bottom:8px;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+          <div class="form-group" style="margin:0;flex:1;min-width:200px;">
+            <label style="font-size:0.8rem;">Novo Arquivo</label>
+            <input type="file" id="ml-novo-arquivo" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" style="background:#fff;padding:6px;cursor:pointer;"/>
+          </div>
+          <div class="form-group" style="margin:0;min-width:120px;">
+            <label style="font-size:0.8rem;">Tipo</label>
+            <select id="ml-arquivo-tipo">
+              <option value="edital">Edital</option>
+              <option value="contrato">Contrato</option>
+              <option value="aditivo">Aditivo</option>
+              <option value="outro">Outro</option>
+            </select>
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="adicionarArquivoLicitacao()" style="margin-bottom:0;">Adicionar</button>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;border-top:1px solid #eee;padding-top:16px;">
+        <div id="ml-resumo-box" class="resumo-box"></div>
+      </div>
+
+      <div style="margin-top:16px;border-top:1px solid #eee;padding-top:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <h4>Renovações / Aditivos</h4>
+          <button class="btn btn-sm btn-primary" onclick="abrirModalAditivoLicitacao()">+ Novo Aditivo</button>
+        </div>
+        <div id="ml-aditivos-lista"><p style="color:#aaa;font-size:0.85rem;">Nenhum aditivo registrado.</p></div>
+      </div>
+
+      <div class="btn-row" style="margin-top:16px;">
         <button class="btn btn-primary" onclick="salvarLicitacao()">Salvar</button>
         <button class="btn" style="background:#e8eef4;color:#333;" onclick="fecharModal('modal-licitacao')">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL ADITIVO LICITACAO -->
+  <div class="modal-overlay" id="modal-aditivo-licitacao">
+    <div class="modal" style="max-width:550px;">
+      <button class="modal-close" onclick="fecharModal('modal-aditivo-licitacao')">&times;</button>
+      <h3>Novo Aditivo / Renovação</h3>
+      <input type="hidden" id="mal-id"/>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Tipo *</label>
+          <select id="mal-tipo">
+            <option value="renovacao">Renovação</option>
+            <option value="aditivo_valor">Aditivo de Valor</option>
+            <option value="aditivo_prazo">Aditivo de Prazo</option>
+            <option value="aditivo_valor_prazo">Aditivo de Valor e Prazo</option>
+            <option value="outro">Outro</option>
+          </select>
+        </div>
+        <div class="form-group full">
+          <label>Descrição</label>
+          <textarea id="mal-descricao" placeholder="Descrição do aditivo/renovação..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Valor Anterior (R$)</label>
+          <input type="number" id="mal-valor-ant" placeholder="0,00" step="0.01"/>
+        </div>
+        <div class="form-group">
+          <label>Valor Novo (R$)</label>
+          <input type="number" id="mal-valor-novo" placeholder="0,00" step="0.01"/>
+        </div>
+        <div class="form-group">
+          <label>Nova Data Início</label>
+          <input type="date" id="mal-inicio"/>
+        </div>
+        <div class="form-group">
+          <label>Nova Data Fim</label>
+          <input type="date" id="mal-fim"/>
+        </div>
+        <div class="form-group full">
+          <label>Arquivo do Aditivo</label>
+          <input type="file" id="mal-arquivo" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" style="background:#fff;padding:6px;cursor:pointer;"/>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="salvarAditivoLicitacao()">Salvar Aditivo</button>
+        <button class="btn" style="background:#e8eef4;color:#333;" onclick="fecharModal('modal-aditivo-licitacao')">Cancelar</button>
       </div>
     </div>
   </div>
@@ -1469,7 +1554,7 @@
     <div id="config-sub-destinatarios" class="config-section">
       <div class="card">
         <h2>Destinatários de E-mail</h2>
-        <p style="margin-bottom:16px;color:#666;font-size:0.9rem;">Cadastre e-mails que receberão os alertas. Marque quais tipos de alerta cada destinatário deseja receber (Contratos, Pagamentos, Certidões, Licitações). Você também pode restringir por empresas e setores.</p>
+        <p style="margin-bottom:16px;color:#666;font-size:0.9rem;">Cadastre e-mails que receberão os alertas. Marque quais tipos de alerta cada destinatário deseja receber (Contratos, Pagamentos, Certidões, Contrato Licitações). Você também pode restringir por empresas e setores.</p>
         <div id="destinatario-form" style="display:flex;gap:8px;margin-bottom:16px;align-items:end;flex-wrap:wrap;">
           <div class="form-group" style="flex:1;min-width:200px;">
             <label>E-mail *</label>
@@ -1484,7 +1569,7 @@
             <div id="dest-empresas-checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0;"></div>
           </div>
           <div class="form-group" style="flex:1;min-width:200px;">
-            <label>Setores (para alertas de Certidões/Licitações)</label>
+            <label>Setores (para alertas de Certidões/Contrato Licitações)</label>
             <div id="dest-setores-checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0;"></div>
           </div>
           <div class="form-group" style="flex:1;min-width:260px;">
@@ -1493,7 +1578,7 @@
               <label style="font-size:0.82rem;"><input type="checkbox" value="contratos" checked/> Contratos</label>
               <label style="font-size:0.82rem;"><input type="checkbox" value="pagamentos" checked/> Pagamentos</label>
               <label style="font-size:0.82rem;"><input type="checkbox" value="certidoes" checked/> Certidões</label>
-              <label style="font-size:0.82rem;"><input type="checkbox" value="licitacoes" checked/> Licitações</label>
+              <label style="font-size:0.82rem;"><input type="checkbox" value="licitacoes" checked/> Contrato Licitações</label>
             </div>
           </div>
           <button class="btn btn-primary" id="btn-salvar-dest" onclick="salvarDestinatario()" style="margin-bottom:1px;">Adicionar</button>
@@ -1540,12 +1625,133 @@
             <input type="email" id="cfg-dest" placeholder="destinatario@email.com"/>
           </div>
         </div>
+
+        <div style="margin-top:24px;border-top:1px solid #eee;padding-top:20px;">
+          <h3 style="margin-bottom:12px;color:#1a3c5e;">Prazos para Alertas</h3>
+          <p style="margin-bottom:16px;color:#666;font-size:0.85rem;">Configure os prazos (em dias) para envio dos alertas por e-mail.</p>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;">
+            <div style="border:1px solid #e0e0e0;border-radius:8px;padding:16px;">
+              <h4 style="margin:0 0 12px;color:#1a3c5e;">Contratos</h4>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label style="font-size:0.8rem;">Faixa 1 (mais longe)</label>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <input type="number" id="pz-ct-f1a" min="0" max="365" style="width:70px;" placeholder="31"/> a
+                  <input type="number" id="pz-ct-f1b" min="0" max="365" style="width:70px;" placeholder="35"/> dias
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label style="font-size:0.8rem;">Faixa 2</label>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <input type="number" id="pz-ct-f2a" min="0" max="365" style="width:70px;" placeholder="16"/> a
+                  <input type="number" id="pz-ct-f2b" min="0" max="365" style="width:70px;" placeholder="30"/> dias
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label style="font-size:0.8rem;">Faixa 3 (exato)</label>
+                <input type="number" id="pz-ct-f3" min="0" max="365" style="width:70px;" placeholder="15"/> dias
+              </div>
+              <div class="form-group">
+                <label style="font-size:0.8rem;">Faixa 4 (mais curto — atenção diária)</label>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <input type="number" id="pz-ct-f4a" min="0" max="365" style="width:70px;" placeholder="0"/> a
+                  <input type="number" id="pz-ct-f4b" min="0" max="365" style="width:70px;" placeholder="14"/> dias
+                </div>
+              </div>
+            </div>
+
+            <div style="border:1px solid #e0e0e0;border-radius:8px;padding:16px;">
+              <h4 style="margin:0 0 12px;color:#d4820a;">Certidões / CNDs</h4>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label style="font-size:0.8rem;">Faixa 1 (mais longe)</label>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <input type="number" id="pz-ce-f1a" min="0" max="365" style="width:70px;" placeholder="31"/> a
+                  <input type="number" id="pz-ce-f1b" min="0" max="365" style="width:70px;" placeholder="35"/> dias
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label style="font-size:0.8rem;">Faixa 2</label>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <input type="number" id="pz-ce-f2a" min="0" max="365" style="width:70px;" placeholder="16"/> a
+                  <input type="number" id="pz-ce-f2b" min="0" max="365" style="width:70px;" placeholder="30"/> dias
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label style="font-size:0.8rem;">Faixa 3 (exato)</label>
+                <input type="number" id="pz-ce-f3" min="0" max="365" style="width:70px;" placeholder="15"/> dias
+              </div>
+              <div class="form-group">
+                <label style="font-size:0.8rem;">Faixa 4 (mais curto — atenção diária)</label>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <input type="number" id="pz-ce-f4a" min="0" max="365" style="width:70px;" placeholder="0"/> a
+                  <input type="number" id="pz-ce-f4b" min="0" max="365" style="width:70px;" placeholder="14"/> dias
+                </div>
+              </div>
+            </div>
+
+            <div style="border:1px solid #e0e0e0;border-radius:8px;padding:16px;">
+              <h4 style="margin:0 0 12px;color:#24527a;">Contrato Licitações</h4>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label style="font-size:0.8rem;">Faixa 1 (mais longe)</label>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <input type="number" id="pz-li-f1a" min="0" max="365" style="width:70px;" placeholder="31"/> a
+                  <input type="number" id="pz-li-f1b" min="0" max="365" style="width:70px;" placeholder="35"/> dias
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label style="font-size:0.8rem;">Faixa 2</label>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <input type="number" id="pz-li-f2a" min="0" max="365" style="width:70px;" placeholder="16"/> a
+                  <input type="number" id="pz-li-f2b" min="0" max="365" style="width:70px;" placeholder="30"/> dias
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label style="font-size:0.8rem;">Faixa 3 (exato)</label>
+                <input type="number" id="pz-li-f3" min="0" max="365" style="width:70px;" placeholder="15"/> dias
+              </div>
+              <div class="form-group">
+                <label style="font-size:0.8rem;">Faixa 4 (mais curto — atenção diária)</label>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <input type="number" id="pz-li-f4a" min="0" max="365" style="width:70px;" placeholder="0"/> a
+                  <input type="number" id="pz-li-f4b" min="0" max="365" style="width:70px;" placeholder="14"/> dias
+                </div>
+              </div>
+            </div>
+
+            <div style="border:1px solid #e0e0e0;border-radius:8px;padding:16px;">
+              <h4 style="margin:0 0 12px;color:#1a5c35;">Pagamentos</h4>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label style="font-size:0.8rem;">Tipos de alerta</label>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                  <label style="font-size:0.85rem;display:flex;align-items:center;gap:4px;">
+                    <input type="checkbox" id="pz-pg-vencidos" checked/> Vencidos
+                  </label>
+                  <label style="font-size:0.85rem;display:flex;align-items:center;gap:4px;">
+                    <input type="checkbox" id="pz-pg-hoje" checked/> Vencem hoje
+                  </label>
+                  <label style="font-size:0.85rem;display:flex;align-items:center;gap:4px;">
+                    <input type="checkbox" id="pz-pg-amanha" checked/> Vencem em breve
+                  </label>
+                </div>
+              </div>
+              <div class="form-group">
+                <label style="font-size:0.8rem;">Antecedência (dias)</label>
+                <input type="number" id="pz-pg-antecedencia" min="1" max="90" style="width:70px;" placeholder="1"/>
+              </div>
+            </div>
+          </div>
+
+          <div class="btn-row" style="margin-top:12px;">
+            <button class="btn btn-primary" onclick="salvarPrazos()" style="background:#1a3c5e;">Salvar Prazos</button>
+            <div id="pz-msg" style="display:none;" class="info-box"></div>
+          </div>
+        </div>
         <div class="btn-row" style="margin-top:16px;flex-wrap:wrap;">
           <button class="btn btn-primary" onclick="salvarConfig()">Salvar Configuração</button>
           <button class="btn btn-success" onclick="enviarLembretePagamentos()">Enviar Lembrete de Pagamentos</button>
           <button class="btn btn-warning" onclick="enviarAlertasContratos()" style="background:#c0392b;">Enviar Alertas de Contratos</button>
           <button class="btn btn-warning" onclick="enviarAlertasCertidoes()" style="background:#d4820a;">Enviar Alertas de Certidões</button>
-          <button class="btn btn-warning" onclick="enviarAlertasLicitacoes()" style="background:#24527a;">Enviar Alertas de Licitações</button>
+          <button class="btn btn-warning" onclick="enviarAlertasLicitacoes()" style="background:#24527a;">Enviar Alertas de Contrato Licitações</button>
         </div>
         <div id="cfg-msg" style="margin-top:12px;display:none;" class="info-box"></div>
       </div>
@@ -2781,7 +2987,7 @@ function renderDestinatariosConfig() {
   }
   const empresas = getEmpresas();
   const sects = getSectors();
-  const alertaLabels = { contratos: 'Contratos', pagamentos: 'Pagamentos', certidoes: 'Certidões', licitacoes: 'Licitações' };
+  const alertaLabels = { contratos: 'Contratos', pagamentos: 'Pagamentos', certidoes: 'Certidões', licitacoes: 'Contrato Licitações' };
   tb.innerHTML = dests.map(d => {
     const nomes = (d.empresaIds || []).map(id => {
       const e = empresas.find(x => x.id === id);
@@ -3017,33 +3223,42 @@ function loadFromServer() {
     }
     if (data.licitacoes && data.licitacoes.length) {
       const serverLics = data.licitacoes.map(lc => {
-        let arquivoEdital = null;
-        if (lc.arquivo_edital_dados) {
-          try { arquivoEdital = JSON.parse(lc.arquivo_edital_dados); } catch(e) {}
+        let arquivos = [];
+        if (lc.arquivos) {
+          try { arquivos = typeof lc.arquivos === 'string' ? JSON.parse(lc.arquivos) : lc.arquivos; } catch(e) {}
         }
-        if (!arquivoEdital && lc.arquivo_edital_nome) {
-          arquivoEdital = { name: lc.arquivo_edital_nome, data: '' };
+        if (!arquivos.length && lc.arquivo_edital_dados) {
+          try { arquivos.push({ ...JSON.parse(lc.arquivo_edital_dados), tipo: 'edital' }); } catch(e) {}
         }
-        let arquivoContrato = null;
-        if (lc.arquivo_contrato_dados) {
-          try { arquivoContrato = JSON.parse(lc.arquivo_contrato_dados); } catch(e) {}
-        }
-        if (!arquivoContrato && lc.arquivo_contrato_nome) {
-          arquivoContrato = { name: lc.arquivo_contrato_nome, data: '' };
+        if (!arquivos.filter(a => a.tipo === 'contrato').length && lc.arquivo_contrato_dados) {
+          try { arquivos.push({ ...JSON.parse(lc.arquivo_contrato_dados), tipo: 'contrato' }); } catch(e) {}
         }
         return {
           id: lc.id, numeroLicitacao: lc.numero_licitacao, edital: lc.edital,
+          nomeLicitacao: lc.nome_licitacao || '', cnpj: lc.cnpj || '',
           objeto: lc.objeto, empresaId: lc.empresa_id, contratoId: lc.contrato_id,
           valor: lc.valor, dataHomologacao: lc.data_homologacao,
           dataInicio: lc.data_inicio, dataFim: lc.data_fim,
-          status: lc.status,
-          arquivoEdital: arquivoEdital,
-          arquivoContrato: arquivoContrato,
+          status: lc.status, arquivos: arquivos,
           obs: lc.observacoes || '', criadoEm: lc.criado_em
         };
       });
       cachedLicitacoes = serverLics; saveLicitacoes(serverLics);
     }
+    if (data.user_setores && data.user_setores.length) {
+      const serverUserSetores = data.user_setores.map(us => ({
+        userId: us.user_id, setorIds: []
+      }));
+      const grouped = {};
+      data.user_setores.forEach(us => {
+        if (!grouped[us.user_id]) grouped[us.user_id] = [];
+        grouped[us.user_id].push(us.setor_id);
+      });
+      const merged = Object.entries(grouped).map(([userId, setorIds]) => ({ userId: parseInt(userId), setorIds }));
+      cachedUserSetores = merged;
+      const t = db.transaction("user_setores", "readwrite");
+      t.objectStore("user_setores").clear();
+      merged.forEach(a => t.objectStore("user_setores").put(a));
     }
     setTimeout(checkNotificacoes, 500);
   }).catch(() => {});
@@ -3139,7 +3354,8 @@ function calcStatusCertidao(cert) {
   return 'valida';
 }
 
-function renderCertidoes() {
+function renderCertidoes(page) {
+  if (page !== undefined) certCurrentPage = page;
   const tb = document.getElementById('tb-certidoes');
   if (!tb) return;
   const empresaFilter = document.getElementById('filtro-ct-empresa')?.value || '';
@@ -3151,12 +3367,19 @@ function renderCertidoes() {
   if (tipoFilter) lista = lista.filter(c => c.tipo === tipoFilter);
   if (statusFilter) lista = lista.filter(c => calcStatusCertidao(c) === statusFilter);
 
-  if (!lista.length) {
+  const total = lista.length;
+  const perPage = pageSizes['cert-pagination'] || PAGE_SIZE;
+  const start = (certCurrentPage - 1) * perPage;
+  const paginated = lista.slice(start, start + perPage);
+
+  renderPagination(total, certCurrentPage, 'cert-pagination', 'renderCertidoes');
+
+  if (!paginated.length) {
     tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:32px">Nenhuma certidão cadastrada.</td></tr>';
     return;
   }
 
-  tb.innerHTML = lista.map(c => {
+  tb.innerHTML = paginated.map(c => {
     const emp = getEmpresas().find(e => e.id === c.empresaId);
     const st = calcStatusCertidao(c);
     const stLabel = { valida: 'Válida', vencida: 'Vencida', vencendo: 'Vencendo', pendente: 'Pendente' }[st];
@@ -3312,7 +3535,8 @@ function calcStatusLicitacao(lc) {
   return map[s] || s;
 }
 
-function renderLicitacoes() {
+function renderLicitacoes(page) {
+  if (page !== undefined) lcCurrentPage = page;
   const tb = document.getElementById('tb-licitacoes');
   if (!tb) return;
   const empresaFilter = document.getElementById('filtro-lc-empresa')?.value || '';
@@ -3324,32 +3548,45 @@ function renderLicitacoes() {
   if (statusFilter) lista = lista.filter(l => l.status === statusFilter);
   if (numeroFilter) lista = lista.filter(l => (l.numeroLicitacao || '').toLowerCase().includes(numeroFilter));
 
-  if (!lista.length) {
-    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:32px">Nenhuma licitação cadastrada.</td></tr>';
+  const total = lista.length;
+  const perPage = pageSizes['lc-pagination'] || PAGE_SIZE;
+  const start = (lcCurrentPage - 1) * perPage;
+  const paginated = lista.slice(start, start + perPage);
+
+  renderPagination(total, lcCurrentPage, 'lc-pagination', 'renderLicitacoes');
+
+  if (!paginated.length) {
+    tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#aaa;padding:32px">Nenhuma licitação cadastrada.</td></tr>';
     return;
   }
 
-  tb.innerHTML = lista.map(l => {
+  tb.innerHTML = paginated.map(l => {
     const emp = getEmpresas().find(e => e.id === l.empresaId);
     const st = l.status || 'em_andamento';
     const stLabel = calcStatusLicitacao(l);
     const stClass = { em_andamento: 'badge-andamento', concluido: 'badge-concluido', deserto: 'badge-deserto', anulado: 'badge-anulado' }[st] || 'badge-andamento';
     const vigencia = (l.dataInicio && l.dataFim) ? `${fmtData(l.dataInicio)} a ${fmtData(l.dataFim)}` : '—';
-    const arqEdital = l.arquivoEdital ? `<button class="btn btn-sm btn-primary" onclick="previewAnexo('${arquivoData(l.arquivoEdital)}','${escapeHtml(l.arquivoEdital.name || 'edital')}')" style="padding:2px 8px;font-size:0.75rem;">Edital</button>` : '';
-    const arqContrato = l.arquivoContrato ? `<button class="btn btn-sm btn-primary" onclick="previewAnexo('${arquivoData(l.arquivoContrato)}','${escapeHtml(l.arquivoContrato.name || 'contrato')}')" style="padding:2px 8px;font-size:0.75rem;">Contrato</button>` : '';
-    const anexos = [arqEdital, arqContrato].filter(Boolean).join(' ') || '—';
+    const arquivos = l.arquivos || [];
+    const arqBtns = arquivos.map((a, i) => `<button class="btn btn-sm btn-primary" onclick="previewAnexo('${a.data || ''}','${escapeHtml(a.name || 'arquivo')}')" style="padding:2px 8px;font-size:0.75rem;">${escapeHtml(a.tipo || a.name?.slice(0,15) || 'arq')}</button>`).join(' ') || '—';
+    const cnpj = l.cnpj || '—';
+    const nomeLic = l.nomeLicitacao || '—';
+    const isAdm = (typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'admin');
+    const isInativo = st === 'concluido' || st === 'deserto' || st === 'anulado';
     return `<tr>
       <td>${escapeHtml(l.numeroLicitacao)}</td>
-      <td>${escapeHtml(l.edital || '—')}</td>
+      <td>${escapeHtml(nomeLic)}</td>
+      <td>${escapeHtml(cnpj)}</td>
       <td>${escapeHtml(emp?.nome || '—')}</td>
       <td>${escapeHtml(l.objeto)}</td>
       <td>R$ ${fmtMoeda(l.valor || 0)}</td>
       <td>${vigencia}</td>
       <td><span class="badge ${stClass}">${stLabel}</span></td>
-      <td>${anexos}</td>
-      <td style="display:flex;gap:4px;">
-        <button class="btn btn-sm btn-primary" onclick="editarLicitacao('${l.id}')" style="padding:2px 8px;font-size:0.75rem;">Editar</button>
-        <button class="btn btn-sm btn-danger" onclick="excluirLicitacao('${l.id}')" style="padding:2px 8px;font-size:0.75rem;">Excluir</button>
+      <td>${arqBtns}</td>
+      <td style="display:flex;gap:4px;flex-wrap:nowrap;white-space:nowrap">
+        <button class="btn btn-sm btn-primary" onclick="abrirDetalheLicitacao('${l.id}')" style="padding:2px 8px;font-size:0.75rem;">Ver</button>
+        <button class="btn btn-sm btn-warning" onclick="editarLicitacao('${l.id}')" style="padding:2px 8px;font-size:0.75rem;">Editar</button>
+        <button class="btn btn-sm ${isInativo ? 'btn-secondary' : 'btn-warning'}" onclick="inativarLicitacao('${l.id}')" style="padding:2px 8px;font-size:0.75rem;">${isInativo ? 'Ativar' : 'Inat'}</button>
+        ${isAdm ? `<button class="btn btn-sm btn-danger" onclick="excluirLicitacao('${l.id}')" style="padding:2px 8px;font-size:0.75rem;">Exc</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -3393,6 +3630,8 @@ function popularModalLicitacaoContrato() {
 function abrirModalLicitacao(lc) {
   document.getElementById('ml-id').value = lc ? lc.id : '';
   document.getElementById('ml-numero').value = lc ? (lc.numeroLicitacao || '') : '';
+  document.getElementById('ml-nome').value = lc ? (lc.nomeLicitacao || '') : '';
+  document.getElementById('ml-cnpj').value = lc ? (lc.cnpj || '') : '';
   document.getElementById('ml-edital').value = lc ? (lc.edital || '') : '';
   document.getElementById('ml-objeto').value = lc ? (lc.objeto || '') : '';
   document.getElementById('ml-valor').value = lc ? (lc.valor || '') : '';
@@ -3401,8 +3640,7 @@ function abrirModalLicitacao(lc) {
   document.getElementById('ml-fim').value = lc ? (lc.dataFim || '') : '';
   document.getElementById('ml-status').value = lc ? (lc.status || 'em_andamento') : 'em_andamento';
   document.getElementById('ml-obs').value = lc ? (lc.obs || '') : '';
-  document.getElementById('ml-arquivo-edital').value = '';
-  document.getElementById('ml-arquivo-contrato').value = '';
+  document.getElementById('ml-novo-arquivo').value = '';
   document.getElementById('modal-licitacao-title').textContent = lc ? 'Editar Licitação' : 'Nova Licitação';
   popularModalLicitacaoEmpresa();
   popularModalLicitacaoContrato();
@@ -3410,6 +3648,22 @@ function abrirModalLicitacao(lc) {
     document.getElementById('ml-empresa').value = lc ? (lc.empresaId || '') : '';
     document.getElementById('ml-contrato').value = lc ? (lc.contratoId || '') : '';
   }, 50);
+  renderArquivosLicitacao(lc ? (lc.arquivos || []) : []);
+  if (lc && lc.id) { carregarAditivosLicitacao(lc.id); } else { document.getElementById('ml-aditivos-lista').innerHTML = '<p style="color:#aaa;font-size:0.85rem;">Nenhum aditivo registrado.</p>'; }
+
+  const resumoBox = document.getElementById('ml-resumo-box');
+  if (resumoBox) {
+    if (lc && lc.resumo) {
+      resumoBox.innerHTML = `<h4 style="margin:12px 0 4px;color:#1a3c5e;">Resumo da Licitação</h4>
+        <p style="font-size:0.9rem;line-height:1.5;white-space:pre-wrap;">${escapeHtml(lc.resumo)}</p>
+        <button class="btn btn-sm btn-primary" onclick="gerarResumo('licitacao','${lc.id}')" style="margin-top:8px;">📄 Regenerar Resumo com IA</button>`;
+    } else if (lc && lc.id) {
+      resumoBox.innerHTML = `<button class="btn btn-sm btn-primary" onclick="gerarResumo('licitacao','${lc.id}')" style="margin-top:8px;">📄 Gerar Resumo com IA</button>`;
+    } else {
+      resumoBox.innerHTML = '';
+    }
+  }
+
   abrirModal('modal-licitacao');
 }
 
@@ -3424,6 +3678,8 @@ async function salvarLicitacao() {
   if (!numero || !objeto) {
     mostrarToast('Preencha Nº Licitação e Objeto.', 'erro'); return;
   }
+  const nomeLicitacao = document.getElementById('ml-nome').value.trim();
+  const cnpj = document.getElementById('ml-cnpj').value.trim();
   const edital = document.getElementById('ml-edital').value;
   const empresaId = document.getElementById('ml-empresa').value || null;
   const contratoId = document.getElementById('ml-contrato').value || null;
@@ -3433,19 +3689,6 @@ async function salvarLicitacao() {
   const dataFim = document.getElementById('ml-fim').value;
   const status = document.getElementById('ml-status').value;
   const obs = document.getElementById('ml-obs').value;
-  const arqEditalInput = document.getElementById('ml-arquivo-edital');
-  const arqContratoInput = document.getElementById('ml-arquivo-contrato');
-
-  let arquivoEdital = null;
-  if (arqEditalInput.files && arqEditalInput.files[0]) {
-    const b64 = await fileToBase64(arqEditalInput.files[0]);
-    arquivoEdital = { name: arqEditalInput.files[0].name, data: b64 };
-  }
-  let arquivoContrato = null;
-  if (arqContratoInput.files && arqContratoInput.files[0]) {
-    const b64 = await fileToBase64(arqContratoInput.files[0]);
-    arquivoContrato = { name: arqContratoInput.files[0].name, data: b64 };
-  }
 
   const licitacoes = getLicitacoes();
   const editId = document.getElementById('ml-id').value;
@@ -3454,6 +3697,8 @@ async function salvarLicitacao() {
     const idx = licitacoes.findIndex(l => l.id === editId);
     if (idx !== -1) {
       licitacoes[idx].numeroLicitacao = numero;
+      licitacoes[idx].nomeLicitacao = nomeLicitacao;
+      licitacoes[idx].cnpj = cnpj;
       licitacoes[idx].edital = edital;
       licitacoes[idx].objeto = objeto;
       licitacoes[idx].empresaId = empresaId;
@@ -3464,14 +3709,13 @@ async function salvarLicitacao() {
       licitacoes[idx].dataFim = dataFim;
       licitacoes[idx].status = status;
       licitacoes[idx].obs = obs;
-      if (arquivoEdital) licitacoes[idx].arquivoEdital = arquivoEdital;
-      if (arquivoContrato) licitacoes[idx].arquivoContrato = arquivoContrato;
+      licitacoes[idx].resumo = licitacoes[idx].resumo || null;
     }
   } else {
     licitacoes.push({
-      id: uid(), numeroLicitacao: numero, edital, objeto,
+      id: uid(), numeroLicitacao: numero, nomeLicitacao, cnpj, edital, objeto,
       empresaId, contratoId, valor, dataHomologacao,
-      dataInicio, dataFim, status, arquivoEdital, arquivoContrato,
+      dataInicio, dataFim, status, arquivos: [], resumo: null,
       obs, criadoEm: new Date().toISOString()
     });
   }
@@ -3483,12 +3727,227 @@ async function salvarLicitacao() {
 }
 
 function excluirLicitacao(id) {
+  if (typeof currentUser === 'undefined' || !currentUser || currentUser.role !== 'admin') {
+    mostrarToast('Apenas o administrador pode excluir licitações.', 'erro'); return;
+  }
   if (!confirm('Excluir esta licitação?')) return;
   const licitacoes = getLicitacoes().filter(l => l.id !== id);
   saveLicitacoes(licitacoes);
   syncToServer();
   renderLicitacoes();
   mostrarToast('Licitação excluída.', 'sucesso');
+}
+
+function inativarLicitacao(id) {
+  const licitacoes = getLicitacoes();
+  const l = licitacoes.find(x => x.id === id);
+  if (!l) return;
+  l.status = (l.status === 'em_andamento') ? 'concluido' : 'em_andamento';
+  saveLicitacoes(licitacoes);
+  syncToServer();
+  renderLicitacoes();
+  renderDashboard();
+  mostrarToast(`Licitação ${l.status === 'em_andamento' ? 'reativada' : 'concluída'} com sucesso.`, 'sucesso');
+}
+
+function abrirDetalheLicitacao(id) {
+  const l = getLicitacoes().find(x => x.id === id);
+  if (!l) return;
+  const emp = getEmpresas().find(e => e.id === l.empresaId);
+  const st = l.status || 'em_andamento';
+  const stLabel = calcStatusLicitacao(l);
+  const stClass = { em_andamento: 'badge-andamento', concluido: 'badge-concluido', deserto: 'badge-deserto', anulado: 'badge-anulado' }[st] || 'badge-andamento';
+  const vigencia = (l.dataInicio && l.dataFim) ? `${fmtData(l.dataInicio)} a ${fmtData(l.dataFim)}` : '—';
+
+  let html = `
+    <div class="form-grid" style="margin-bottom:16px;">
+      <div><label>Nº Licitação</label><p><strong>${escapeHtml(l.numeroLicitacao)}</strong></p></div>
+      <div><label>Nome</label><p>${escapeHtml(l.nomeLicitacao || '—')}</p></div>
+      <div><label>CNPJ</label><p>${escapeHtml(l.cnpj || '—')}</p></div>
+      <div><label>Empresa</label><p>${escapeHtml(emp?.nome || '—')}</p></div>
+      <div class="full"><label>Objeto</label><p>${escapeHtml(l.objeto)}</p></div>
+      <div><label>Valor do Contrato</label><p>R$ ${fmtMoeda(l.valor || 0)}</p></div>
+      <div><label>Vigência</label><p>${vigencia}</p></div>
+      <div><label>Status</label><p><span class="badge ${stClass}">${stLabel}</span></p></div>
+      <div><label>Edital</label><p>${escapeHtml(l.edital || '—')}</p></div>
+      <div><label>Data Homologação</label><p>${l.dataHomologacao ? fmtData(l.dataHomologacao) : '—'}</p></div>
+    </div>`;
+
+  if (l.obs) html += `<div class="info-box">${escapeHtml(l.obs)}</div>`;
+
+  const arquivos = l.arquivos || [];
+  if (arquivos.length) {
+    html += `<h4 style="margin:16px 0 8px;color:#1a3c5e;">Arquivos Anexos</h4>`;
+    html += arquivos.map((a, i) => {
+      const tipoLabel = {edital:'Edital',contrato:'Contrato',aditivo:'Aditivo',outro:'Outro'}[a.tipo] || a.tipo;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f5f5f5;border-radius:4px;margin-bottom:4px;">
+        <span style="font-size:0.85rem;"><b>[${tipoLabel}]</b> ${escapeHtml(a.name || 'arquivo')}</span>
+        <button class="btn btn-sm btn-primary" onclick="previewAnexo('${a.data || ''}','${escapeHtml(a.name || 'arquivo')}')" style="padding:2px 8px;font-size:0.75rem;">Ver</button>
+      </div>`;
+    }).join('');
+  }
+
+  html += `<div class="resumo-box" id="resumo-licitacao-${l.id}">`;
+  if (l.resumo) {
+    html += `<h4 style="margin:12px 0 4px;color:#1a3c5e;">Resumo da Licitação</h4>`;
+    html += `<p style="font-size:0.9rem;line-height:1.5;white-space:pre-wrap;">${escapeHtml(l.resumo)}</p>`;
+    html += `<button class="btn btn-sm btn-primary" onclick="gerarResumo('licitacao','${l.id}')" style="margin-top:8px;">📄 Regenerar Resumo com IA</button>`;
+  } else {
+    html += `<button class="btn btn-sm btn-primary" onclick="gerarResumo('licitacao','${l.id}')" style="margin-top:8px;">📄 Gerar Resumo com IA</button>`;
+  }
+  html += `</div>`;
+
+  document.getElementById('detalhe-content').innerHTML = html;
+  const btns = document.getElementById('detalhe-btns');
+  btns.innerHTML = `<button class="btn btn-primary" onclick="editarLicitacao('${id}'); fecharModal('modal-detalhe')">Editar</button>`;
+  abrirModal('modal-detalhe');
+}
+
+let _licitacaoArquivosTemp = [];
+
+function renderArquivosLicitacao(arquivos) {
+  _licitacaoArquivosTemp = arquivos || [];
+  const container = document.getElementById('ml-arquivos-lista');
+  if (!_licitacaoArquivosTemp.length) {
+    container.innerHTML = '<p style="color:#aaa;font-size:0.85rem;">Nenhum arquivo anexado.</p>';
+    return;
+  }
+  const isAdmin = (typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'admin');
+  container.innerHTML = _licitacaoArquivosTemp.map((a, i) => {
+    const tipoLabel = {edital:'Edital',contrato:'Contrato',aditivo:'Aditivo',outro:'Outro'}[a.tipo] || a.tipo;
+    const delBtn = isAdmin ? `<button class="btn btn-sm btn-danger" onclick="removerArquivoLicitacao(${i})" style="padding:2px 6px;font-size:0.7rem;">x</button>` : '';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:4px 8px;background:#f5f5f5;border-radius:4px;margin-bottom:4px;">
+      <span style="font-size:0.82rem;"><b>[${tipoLabel}]</b> ${escapeHtml(a.name || 'arquivo')}</span>
+      ${delBtn}
+    </div>`;
+  }).join('');
+}
+
+async function adicionarArquivoLicitacao() {
+  const input = document.getElementById('ml-novo-arquivo');
+  const tipo = document.getElementById('ml-arquivo-tipo').value;
+  if (!input.files || !input.files[0]) {
+    mostrarToast('Selecione um arquivo.', 'erro'); return;
+  }
+  const b64 = await fileToBase64(input.files[0]);
+  _licitacaoArquivosTemp.push({ name: input.files[0].name, data: b64, tipo });
+  input.value = '';
+  renderArquivosLicitacao(_licitacaoArquivosTemp);
+  const editId = document.getElementById('ml-id').value;
+  if (editId) {
+    const licitacoes = getLicitacoes();
+    const idx = licitacoes.findIndex(l => l.id === editId);
+    if (idx !== -1) {
+      licitacoes[idx].arquivos = _licitacaoArquivosTemp;
+      saveLicitacoes(licitacoes);
+      syncToServer();
+    }
+  }
+}
+
+function removerArquivoLicitacao(idx) {
+  if (!confirm('Remover este arquivo?')) return;
+  _licitacaoArquivosTemp.splice(idx, 1);
+  renderArquivosLicitacao(_licitacaoArquivosTemp);
+  const editId = document.getElementById('ml-id').value;
+  if (editId) {
+    const licitacoes = getLicitacoes();
+    const licIdx = licitacoes.findIndex(l => l.id === editId);
+    if (licIdx !== -1) {
+      licitacoes[licIdx].arquivos = _licitacaoArquivosTemp;
+      saveLicitacoes(licitacoes);
+      syncToServer();
+    }
+  }
+}
+
+async function carregarAditivosLicitacao(licitacaoId) {
+  const container = document.getElementById('ml-aditivos-lista');
+  try {
+    const r = await fetch(`/api/licitacoes/${licitacaoId}/aditivos`);
+    const aditivos = await r.json();
+    if (!aditivos.length) {
+      container.innerHTML = '<p style="color:#aaa;font-size:0.85rem;">Nenhum aditivo registrado.</p>';
+      return;
+    }
+    container.innerHTML = aditivos.map(a => {
+      const tipoLabel = {renovacao:'Renovação','aditivo_valor':'Aditivo de Valor','aditivo_prazo':'Aditivo de Prazo','aditivo_valor_prazo':'Aditivo Valor+Prazo',outro:'Outro'}[a.tipo] || a.tipo;
+      const arqBtns = (a.arquivos || []).map(ar => `<button class="btn btn-sm btn-primary" onclick="previewAnexo('${ar.data || ''}','${escapeHtml(ar.name || 'aditivo')}')" style="padding:2px 6px;font-size:0.7rem;">${escapeHtml(ar.name?.slice(0,20) || 'arquivo')}</button>`).join(' ');
+      const vigencia = (a.dataInicio && a.dataFim) ? `${fmtData(a.dataInicio)} a ${fmtData(a.dataFim)}` : '';
+      const valor = a.valorNovo ? `R$ ${fmtMoeda(a.valorNovo)}` : '';
+      return `<div style="border:1px solid #ddd;border-radius:6px;padding:8px 12px;margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <b style="font-size:0.85rem;">${tipoLabel}</b>
+          <button class="btn btn-sm btn-danger" onclick="excluirAditivoLicitacao('${licitacaoId}','${a.id}')" style="padding:2px 6px;font-size:0.7rem;">Excluir</button>
+        </div>
+        ${a.descricao ? `<p style="margin:4px 0;font-size:0.82rem;color:#555;">${escapeHtml(a.descricao)}</p>` : ''}
+        <div style="font-size:0.8rem;color:#666;">${vigencia ? `Vigência: ${vigencia}` : ''} ${valor ? `| Valor: ${valor}` : ''}</div>
+        ${arqBtns ? `<div style="margin-top:4px;">${arqBtns}</div>` : ''}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    container.innerHTML = '<p style="color:#aaa;font-size:0.85rem;">Nenhum aditivo registrado.</p>';
+  }
+}
+
+let _aditivoLicitacaoId = null;
+function abrirModalAditivoLicitacao() {
+  _aditivoLicitacaoId = document.getElementById('ml-id').value;
+  if (!_aditivoLicitacaoId) {
+    mostrarToast('Salve a licitação primeiro para adicionar aditivos.', 'erro'); return;
+  }
+  document.getElementById('mal-tipo').value = 'renovacao';
+  document.getElementById('mal-descricao').value = '';
+  document.getElementById('mal-valor-ant').value = '';
+  document.getElementById('mal-valor-novo').value = '';
+  document.getElementById('mal-inicio').value = '';
+  document.getElementById('mal-fim').value = '';
+  document.getElementById('mal-arquivo').value = '';
+  abrirModal('modal-aditivo-licitacao');
+}
+
+async function salvarAditivoLicitacao() {
+  if (!_aditivoLicitacaoId) return;
+  const tipo = document.getElementById('mal-tipo').value;
+  const descricao = document.getElementById('mal-descricao').value.trim();
+  const valorAnterior = parseFloat(document.getElementById('mal-valor-ant').value) || 0;
+  const valorNovo = parseFloat(document.getElementById('mal-valor-novo').value) || 0;
+  const dataInicio = document.getElementById('mal-inicio').value;
+  const dataFim = document.getElementById('mal-fim').value;
+  const arqInput = document.getElementById('mal-arquivo');
+  let arquivos = [];
+  if (arqInput.files && arqInput.files[0]) {
+    const b64 = await fileToBase64(arqInput.files[0]);
+    arquivos.push({ name: arqInput.files[0].name, data: b64, tipo: 'aditivo' });
+  }
+  getCsrfToken().then(() => {
+    fetch(`/api/licitacoes/${_aditivoLicitacaoId}/aditivos`, {
+      method: 'POST', headers: Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
+      body: JSON.stringify({ tipo, descricao, valorAnterior, valorNovo, dataInicio, dataFim, arquivos })
+    }).then(r => r.json()).then(d => {
+      if (d.ok) {
+        fecharModal('modal-aditivo-licitacao');
+        carregarAditivosLicitacao(_aditivoLicitacaoId);
+        mostrarToast('Aditivo salvo!', 'sucesso');
+      } else {
+        mostrarToast(d.erro || 'Erro ao salvar aditivo.', 'erro');
+      }
+    }).catch(() => mostrarToast('Servidor offline.', 'erro'));
+  });
+}
+
+function excluirAditivoLicitacao(licitacaoId, aditivoId) {
+  if (!confirm('Excluir este aditivo?')) return;
+  getCsrfToken().then(() => {
+    fetch(`/api/licitacoes/${licitacaoId}/aditivos/${aditivoId}`, {
+      method: 'DELETE', headers: csrfHeaders()
+    }).then(r => r.json()).then(d => {
+      if (d.ok) {
+        carregarAditivosLicitacao(licitacaoId);
+        mostrarToast('Aditivo excluído.', 'sucesso');
+      }
+    }).catch(() => mostrarToast('Erro ao excluir.', 'erro'));
+  });
 }
 
 // ===================== NAVEGAÇÃO =====================
@@ -3554,7 +4013,7 @@ function showConfigSub(section) {
   if (section === 'setores') renderSetoresConfig();
   if (section === 'tipos') renderTiposConfig();
   if (section === 'destinatarios') { renderDestinatariosConfig(); popularDestEmpresaCheckboxes(); }
-  if (section === 'email') carregarConfig();
+  if (section === 'email') { carregarConfig(); carregarPrazos(); }
   if (section === 'historico') carregarHistorico();
 }
 
@@ -3844,8 +4303,9 @@ function renderContratos(page) {
   });
 
   const total = lista.length;
-  const start = (ctCurrentPage - 1) * PAGE_SIZE;
-  const paginated = lista.slice(start, start + PAGE_SIZE);
+  const perPage = pageSizes['ct-pagination'] || PAGE_SIZE;
+  const start = (ctCurrentPage - 1) * perPage;
+  const paginated = lista.slice(start, start + perPage);
 
   renderPagination(total, ctCurrentPage, 'ct-pagination', 'renderContratos');
 
@@ -3980,20 +4440,38 @@ function abrirDetalhe(id) {
 }
 
 function gerarResumo(entity, id) {
-  const btn = document.querySelector(`#resumo-${entity}-${id} button`);
+  const btn = document.querySelector(`#resumo-${entity}-${id} button`) || document.querySelector(`#ml-resumo-box button`);
   if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
   fetch('/api/resumo', { method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({entity, entity_id: id}) })
     .then(r => r.json())
     .then(d => {
       if (d.ok) {
-        const contratos = getContratos();
-        const c = contratos.find(x => x.id === id);
-        if (c) { c.resumo = d.resumo; saveContratos(contratos); }
-        const container = document.getElementById(`resumo-${entity}-${id}`);
-        if (container) {
-          container.innerHTML = `<h4 style="margin:12px 0 4px;color:#1a3c5e;">Resumo do Contrato</h4>
-            <p style="font-size:0.9rem;line-height:1.5;white-space:pre-wrap;">${escapeHtml(d.resumo)}</p>
-            <button class="btn btn-sm btn-light" onclick="gerarResumo('${entity}','${id}')" style="margin-top:4px;">Regenerar</button>`;
+        if (entity === 'contract') {
+          const contratos = getContratos();
+          const c = contratos.find(x => x.id === id);
+          if (c) { c.resumo = d.resumo; saveContratos(contratos); }
+          const container = document.getElementById(`resumo-${entity}-${id}`);
+          if (container) {
+            container.innerHTML = `<h4 style="margin:12px 0 4px;color:#1a3c5e;">Resumo do Contrato</h4>
+              <p style="font-size:0.9rem;line-height:1.5;white-space:pre-wrap;">${escapeHtml(d.resumo)}</p>
+              <button class="btn btn-sm btn-primary" onclick="gerarResumo('${entity}','${id}')" style="margin-top:8px;">📄 Regenerar Resumo com IA</button>`;
+          }
+        } else if (entity === 'licitacao') {
+          const licitacoes = getLicitacoes();
+          const l = licitacoes.find(x => x.id === id);
+          if (l) { l.resumo = d.resumo; saveLicitacoes(licitacoes); }
+          const container = document.getElementById('ml-resumo-box');
+          if (container) {
+            container.innerHTML = `<h4 style="margin:12px 0 4px;color:#1a3c5e;">Resumo da Licitação</h4>
+              <p style="font-size:0.9rem;line-height:1.5;white-space:pre-wrap;">${escapeHtml(d.resumo)}</p>
+              <button class="btn btn-sm btn-primary" onclick="gerarResumo('licitacao','${id}')" style="margin-top:8px;">📄 Regenerar Resumo com IA</button>`;
+          }
+          const containerDetalhe = document.getElementById(`resumo-licitacao-${id}`);
+          if (containerDetalhe) {
+            containerDetalhe.innerHTML = `<h4 style="margin:12px 0 4px;color:#1a3c5e;">Resumo da Licitação</h4>
+              <p style="font-size:0.9rem;line-height:1.5;white-space:pre-wrap;">${escapeHtml(d.resumo)}</p>
+              <button class="btn btn-sm btn-primary" onclick="gerarResumo('licitacao','${id}')" style="margin-top:8px;">📄 Regenerar Resumo com IA</button>`;
+          }
         }
         mostrarToast('Resumo gerado com sucesso!', 'sucesso');
       } else {
@@ -4249,8 +4727,9 @@ function renderPagamentos(page) {
   lista.sort((a,b)=> a.vencimento.localeCompare(b.vencimento));
 
   const total = lista.length;
-  const start = (pgCurrentPage - 1) * PAGE_SIZE;
-  const paginated = lista.slice(start, start + PAGE_SIZE);
+  const perPage = pageSizes['pg-pagination'] || PAGE_SIZE;
+  const start = (pgCurrentPage - 1) * perPage;
+  const paginated = lista.slice(start, start + perPage);
 
   renderPagination(total, pgCurrentPage, 'pg-pagination', 'renderPagamentos');
 
@@ -4476,7 +4955,7 @@ function renderDashboard() {
     </div>
     <div class="summary-card">
       <div class="value">${licTotal}</div>
-      <div class="label">Licitações Total</div>
+      <div class="label">Contrato Licitações Total</div>
     </div>
     <div class="summary-card green">
       <div class="value">${licAndamento}</div>
@@ -4701,6 +5180,12 @@ function salvarUsuario() {
   }
 
   function onUserSaved(userId) {
+    if (userId && empresaIds.length) {
+      fetch('/api/user-empresas', { method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({user_id: userId, empresa_ids: empresaIds}) }).catch(() => {});
+    }
+    if (userId && setorIds.length) {
+      fetch('/api/user-setores', { method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({user_id: userId, setor_ids: setorIds}) }).catch(() => {});
+    }
     if (isAdmin) {
       const existing = cachedUserEmpresas.find(u => u.userId === userId);
       if (existing) {
@@ -4849,6 +5334,84 @@ function salvarConfig() {
   }).catch(() => { btn.disabled = false; btn.textContent = 'Salvar Configuração'; });
 }
 
+function carregarPrazos() {
+  fetch('/api/config-email')
+    .then(r=>r.json()).then(cfg => {
+      const p = cfg.prazos || {};
+      const ct = p.contratos || {};
+      const ce = p.certidoes || {};
+      const li = p.licitacoes || {};
+      const pg = p.pagamentos || {};
+      const f1 = ct.faixa1 || [31,35], f2 = ct.faixa2 || [16,30], f3 = ct.faixa3 ?? 15, f4 = ct.faixa4 || [0,14];
+      document.getElementById('pz-ct-f1a').value = f1[0]; document.getElementById('pz-ct-f1b').value = f1[1];
+      document.getElementById('pz-ct-f2a').value = f2[0]; document.getElementById('pz-ct-f2b').value = f2[1];
+      document.getElementById('pz-ct-f3').value = f3;
+      document.getElementById('pz-ct-f4a').value = f4[0]; document.getElementById('pz-ct-f4b').value = f4[1];
+      const cef1 = ce.faixa1 || [31,35], cef2 = ce.faixa2 || [16,30], cef3 = ce.faixa3 ?? 15, cef4 = ce.faixa4 || [0,14];
+      document.getElementById('pz-ce-f1a').value = cef1[0]; document.getElementById('pz-ce-f1b').value = cef1[1];
+      document.getElementById('pz-ce-f2a').value = cef2[0]; document.getElementById('pz-ce-f2b').value = cef2[1];
+      document.getElementById('pz-ce-f3').value = cef3;
+      document.getElementById('pz-ce-f4a').value = cef4[0]; document.getElementById('pz-ce-f4b').value = cef4[1];
+      const lif1 = li.faixa1 || [31,35], lif2 = li.faixa2 || [16,30], lif3 = li.faixa3 ?? 15, lif4 = li.faixa4 || [0,14];
+      document.getElementById('pz-li-f1a').value = lif1[0]; document.getElementById('pz-li-f1b').value = lif1[1];
+      document.getElementById('pz-li-f2a').value = lif2[0]; document.getElementById('pz-li-f2b').value = lif2[1];
+      document.getElementById('pz-li-f3').value = lif3;
+      document.getElementById('pz-li-f4a').value = lif4[0]; document.getElementById('pz-li-f4b').value = lif4[1];
+      document.getElementById('pz-pg-vencidos').checked = pg.vencidos !== false;
+      document.getElementById('pz-pg-hoje').checked = pg.hoje !== false;
+      document.getElementById('pz-pg-amanha').checked = pg.amanha !== false;
+      document.getElementById('pz-pg-antecedencia').value = pg.antecedencia_dias || 1;
+    }).catch(()=>{});
+}
+
+function salvarPrazos() {
+  const msg = document.getElementById('pz-msg');
+  const val = (id, def) => parseInt(document.getElementById(id).value) || def;
+  const prazos = {
+    contratos: {
+      faixa1: [val('pz-ct-f1a',31), val('pz-ct-f1b',35)],
+      faixa2: [val('pz-ct-f2a',16), val('pz-ct-f2b',30)],
+      faixa3: val('pz-ct-f3',15),
+      faixa4: [val('pz-ct-f4a',0), val('pz-ct-f4b',14)]
+    },
+    certidoes: {
+      faixa1: [val('pz-ce-f1a',31), val('pz-ce-f1b',35)],
+      faixa2: [val('pz-ce-f2a',16), val('pz-ce-f2b',30)],
+      faixa3: val('pz-ce-f3',15),
+      faixa4: [val('pz-ce-f4a',0), val('pz-ce-f4b',14)]
+    },
+    licitacoes: {
+      faixa1: [val('pz-li-f1a',31), val('pz-li-f1b',35)],
+      faixa2: [val('pz-li-f2a',16), val('pz-li-f2b',30)],
+      faixa3: val('pz-li-f3',15),
+      faixa4: [val('pz-li-f4a',0), val('pz-li-f4b',14)]
+    },
+    pagamentos: {
+      vencidos: document.getElementById('pz-pg-vencidos').checked,
+      hoje: document.getElementById('pz-pg-hoje').checked,
+      amanha: document.getElementById('pz-pg-amanha').checked,
+      antecedencia_dias: val('pz-pg-antecedencia',1)
+    }
+  };
+  getCsrfToken().then(() => {
+    fetch('/api/config-email', {
+      method:'GET'
+    }).then(r=>r.json()).then(cfg => {
+      cfg.prazos = prazos;
+      return fetch('/api/config-email', {
+        method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify(cfg)
+      });
+    }).then(r=>r.json()).then(d=>{
+      if(d.ok) { msg.className='ok-box'; msg.textContent='Prazos salvos com sucesso!'; }
+      else { msg.className='warn-box'; msg.textContent=d.erro||'Erro ao salvar'; }
+      msg.style.display='block';
+      setTimeout(()=>{ msg.style.display='none'; }, 3000);
+    }).catch(()=>{
+      msg.className='warn-box'; msg.textContent='Servidor offline.'; msg.style.display='block';
+    });
+  });
+}
+
 function enviarLembretePagamentos() {
   const btn = document.querySelector('#page-configuracao .btn-success');
   const msg = document.getElementById('cfg-msg');
@@ -4966,8 +5529,8 @@ function enviarAlertasLicitacoes() {
     msg.className = 'warn-box';
     msg.textContent = 'Servidor offline. Inicie o servidor com "python app.py".';
     msg.style.display = 'block';
-  }).finally(()=>{ btn.disabled = false; btn.textContent = 'Enviar Alertas de Licitações'; });
-  }).catch(() => { btn.disabled = false; btn.textContent = 'Enviar Alertas de Licitações'; });
+  }).finally(()=>{ btn.disabled = false; btn.textContent = 'Enviar Alertas de Contrato Licitações'; });
+  }).catch(() => { btn.disabled = false; btn.textContent = 'Enviar Alertas de Contrato Licitações'; });
 }
 
 // ===================== CSS ADICIONAL =====================
@@ -5205,27 +5768,44 @@ function alterarMinhaSenha() {
 const PAGE_SIZE = 25;
 let ctCurrentPage = 1;
 let pgCurrentPage = 1;
+let certCurrentPage = 1;
+let lcCurrentPage = 1;
+let pageSizes = { 'ct-pagination': 25, 'pg-pagination': 25, 'cert-pagination': 25, 'lc-pagination': 25 };
 
 function renderPagination(totalItems, currentPage, containerId, renderFn) {
-  const totalPages = Math.ceil(totalItems / PAGE_SIZE);
+  const perPage = pageSizes[containerId] || PAGE_SIZE;
+  const totalPages = Math.ceil(totalItems / perPage);
   const container = document.getElementById(containerId);
-  if (!container || totalPages <= 1) { if (container) container.innerHTML = ''; return; }
-  
-  let html = '<div style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap;">';
-  html += `<button class="btn btn-sm" onclick="${renderFn}(${Math.max(1, currentPage-1)})" ${currentPage===1?'disabled':''}>Anterior</button>`;
-  
-  const start = Math.max(1, currentPage - 2);
-  const end = Math.min(totalPages, currentPage + 2);
-  if (start > 1) html += `<button class="btn btn-sm" onclick="${renderFn}(1)">1</button><span style="color:#888">...</span>`;
-  for (let i = start; i <= end; i++) {
-    html += `<button class="btn btn-sm ${i===currentPage?'btn-primary':''}" onclick="${renderFn}(${i})">${i}</button>`;
+  if (!container) return;
+  if (totalItems === 0) { container.innerHTML = ''; return; }
+
+  let html = '<div class="pagination-controls">';
+  html += `<select class="pg-select" onchange="changePageSize('${containerId}','${renderFn}',this.value)" title="Itens por página">`;
+  [15,25,50,100].forEach(n => { html += `<option value="${n}" ${n===perPage?'selected':''}>${n} por página</option>`; });
+  html += `</select>`;
+  if (totalPages > 1) {
+    html += `<button class="pg-btn" onclick="${renderFn}(1)" ${currentPage<=1?'disabled':''} title="Primeira página">&#9664;&#9664;</button>`;
+    html += `<button class="pg-btn" onclick="${renderFn}(${currentPage-1})" ${currentPage<=1?'disabled':''}>&#9664; Anterior</button>`;
+    const start = Math.max(1, currentPage - 2);
+    const end = Math.min(totalPages, currentPage + 2);
+    if (start > 1) html += `<button class="pg-btn" onclick="${renderFn}(1)">1</button>`;
+    if (start > 2) html += `<span class="pg-ellipsis">...</span>`;
+    for (let i = start; i <= end; i++) {
+      html += `<button class="pg-btn ${i===currentPage?'pg-active':''}" onclick="${renderFn}(${i})">${i}</button>`;
+    }
+    if (end < totalPages - 1) html += `<span class="pg-ellipsis">...</span>`;
+    if (end < totalPages) html += `<button class="pg-btn" onclick="${renderFn}(${totalPages})">${totalPages}</button>`;
+    html += `<button class="pg-btn" onclick="${renderFn}(${currentPage+1})" ${currentPage>=totalPages?'disabled':''}>Próxima &#9654;</button>`;
+    html += `<button class="pg-btn" onclick="${renderFn}(${totalPages})" ${currentPage>=totalPages?'disabled':''} title="Última página">&#9654;&#9654;</button>`;
   }
-  if (end < totalPages) html += `<span style="color:#888">...</span><button class="btn btn-sm" onclick="${renderFn}(${totalPages})">${totalPages}</button>`;
-  
-  html += `<button class="btn btn-sm" onclick="${renderFn}(${Math.min(totalPages, currentPage+1)})" ${currentPage===totalPages?'disabled':''}>Proximo</button>`;
-  html += `<span style="color:#888;font-size:0.8rem;margin-left:8px;">${totalItems} registro(s) - Pag ${currentPage}/${totalPages}</span>`;
+  html += `<span class="pg-info">${totalItems} registro(s) — Página ${Math.min(currentPage, totalPages || 1)} de ${totalPages || 1}</span>`;
   html += '</div>';
   container.innerHTML = html;
+}
+
+function changePageSize(containerId, renderFn, value) {
+  pageSizes[containerId] = parseInt(value);
+  window[renderFn](1);
 }
 
 // ─── EXPORTAÇÃO EXCEL (CSV) ─────────────────────────────────

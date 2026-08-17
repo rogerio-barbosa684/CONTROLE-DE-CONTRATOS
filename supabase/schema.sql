@@ -151,9 +151,10 @@ CREATE TABLE IF NOT EXISTS certidoes (
   data_emissao TEXT DEFAULT '',
   data_validade TEXT DEFAULT '',
   status TEXT DEFAULT 'pendente',
-  arquivo_nome TEXT DEFAULT '',
-  arquivo_dados TEXT DEFAULT '',
-  observacoes TEXT DEFAULT '',
+  arquivo TEXT DEFAULT '',
+  obs TEXT DEFAULT '',
+  created_by INTEGER,
+  updated_at TEXT,
   criado_em TEXT NOT NULL DEFAULT (now()::text)
 );
 
@@ -163,6 +164,8 @@ CREATE TABLE IF NOT EXISTS licitacoes (
   empresa_id TEXT DEFAULT '',
   numero_licitacao TEXT DEFAULT '',
   edital TEXT DEFAULT '',
+  nome_licitacao TEXT DEFAULT '',
+  cnpj TEXT DEFAULT '',
   objeto TEXT DEFAULT '',
   contrato_id TEXT DEFAULT '',
   valor REAL DEFAULT 0,
@@ -170,10 +173,18 @@ CREATE TABLE IF NOT EXISTS licitacoes (
   data_inicio TEXT DEFAULT '',
   data_fim TEXT DEFAULT '',
   status TEXT DEFAULT 'em_andamento',
-  arquivo_edital_nome TEXT DEFAULT '',
-  arquivo_edital_dados TEXT DEFAULT '',
-  arquivo_contrato_nome TEXT DEFAULT '',
-  arquivo_contrato_dados TEXT DEFAULT '',
-  observacoes TEXT DEFAULT '',
+  arquivo_edital TEXT DEFAULT '',
+  arquivo_contrato TEXT DEFAULT '',
+  arquivos TEXT DEFAULT '[]',
+  obs TEXT DEFAULT '',
+  created_by INTEGER,
+  updated_at TEXT,
   criado_em TEXT NOT NULL DEFAULT (now()::text)
+);
+
+-- User-Empresas (vinculo usuario-empresa)
+CREATE TABLE IF NOT EXISTS user_empresas (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  empresa_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, empresa_id)
 );

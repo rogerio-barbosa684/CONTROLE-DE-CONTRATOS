@@ -132,9 +132,10 @@ async function main() {
     tipo: r.tipo || '', data_emissao: r.data_emissao || '',
     data_validade: r.data_validade || '',
     status: r.status || 'pendente',
-    arquivo_nome: r.arquivo_nome || '',
-    arquivo_dados: r.arquivo_dados || '',
-    observacoes: r.observacoes || '',
+    arquivo: r.arquivo || r.arquivo_dados || '',
+    obs: r.obs || r.observacoes || '',
+    created_by: r.created_by || null,
+    updated_at: r.updated_at || null,
     criado_em: r.criado_em
   }))
 
@@ -142,16 +143,20 @@ async function main() {
   await migrate('licitacoes', 'licitacoes', r => ({
     id: r.id, empresa_id: r.empresa_id || '',
     numero_licitacao: r.numero_licitacao || '',
-    edital: r.edital || '', objeto: r.objeto || '',
+    edital: r.edital || '', 
+    nome_licitacao: r.nome_licitacao || '',
+    cnpj: r.cnpj || '',
+    objeto: r.objeto || '',
     contrato_id: r.contrato_id || '', valor: r.valor || 0,
     data_homologacao: r.data_homologacao || '',
     data_inicio: r.data_inicio || '', data_fim: r.data_fim || '',
     status: r.status || 'em_andamento',
-    arquivo_edital_nome: r.arquivo_edital_nome || '',
-    arquivo_edital_dados: r.arquivo_edital_dados || '',
-    arquivo_contrato_nome: r.arquivo_contrato_nome || '',
-    arquivo_contrato_dados: r.arquivo_contrato_dados || '',
-    observacoes: r.observacoes || '',
+    arquivo_edital: r.arquivo_edital || r.arquivo_edital_dados || '',
+    arquivo_contrato: r.arquivo_contrato || r.arquivo_contrato_dados || '',
+    arquivos: r.arquivos || '[]',
+    obs: r.obs || r.observacoes || '',
+    created_by: r.created_by || null,
+    updated_at: r.updated_at || null,
     criado_em: r.criado_em
   }))
 

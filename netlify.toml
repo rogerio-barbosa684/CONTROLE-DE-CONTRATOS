@@ -46,6 +46,31 @@
   status = 404
 
 [[redirects]]
+  from = "/api.js"
+  to = "/404"
+  status = 404
+
+[[redirects]]
+  from = "/deploy-setup.js"
+  to = "/404"
+  status = 404
+
+[[redirects]]
+  from = "/migrate.js"
+  to = "/404"
+  status = 404
+
+[[redirects]]
+  from = "/test_login.mjs"
+  to = "/404"
+  status = 404
+
+[[redirects]]
+  from = "/email-diario.js"
+  to = "/404"
+  status = 404
+
+[[redirects]]
   from = "/admin_initial_password.txt"
   to = "/404"
   status = 404

@@ -196,8 +196,15 @@ function validateCsrf(user, bodyCsrf) {
 }
 
 function requireAdmin(user) {
-  if (!user || user.role !== 'admin') {
+  if (!user || (user.role !== 'admin' && user.role !== 'setor_admin')) {
     return json({ ok: false, erro: 'Acesso restrito ao administrador' }, 403)
+  }
+  return null
+}
+
+function requireGlobalAdmin(user) {
+  if (!user || user.role !== 'admin') {
+    return json({ ok: false, erro: 'Acesso restrito ao administrador global' }, 403)
   }
   return null
 }
@@ -801,6 +808,116 @@ export async function handler(event) {
       return json({ ok: true })
     }
 
+    // ─── SECTORS ────────────────────────────────────────────────────────
+    if (route === 'sectors' && httpMethod === 'GET') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      const { data } = await getSupabase().from('sectors').select('*').order('nome')
+      return json(data || [])
+    }
+
+    if (route === 'sectors' && httpMethod === 'POST') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      const adminErr = requireGlobalAdmin(user)
+      if (adminErr) return adminErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const sid = body.id || crypto.randomUUID()
+      const nome = (body.nome || '').trim()
+      if (!nome) return json({ ok: false, erro: 'Nome do setor e obrigatorio' }, 400)
+      const active = body.active !== undefined ? (body.active ? 1 : 0) : 1
+      const { data: existing } = await getSupabase().from('sectors').select('id').eq('id', sid).single()
+      if (existing) {
+        await getSupabase().from('sectors').update({ nome, active }).eq('id', sid)
+      } else {
+        await getSupabase().from('sectors').insert({ id: sid, nome, active })
+      }
+      return json({ ok: true, id: sid })
+    }
+
+    if (parts[0] === 'sectors' && parts[1] && httpMethod === 'PUT') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      const adminErr = requireGlobalAdmin(user)
+      if (adminErr) return adminErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const upd = {}
+      if (body.nome !== undefined) upd.nome = (body.nome || '').trim()
+      if (body.active !== undefined) upd.active = body.active ? 1 : 0
+      await getSupabase().from('sectors').update(upd).eq('id', parts[1])
+      return json({ ok: true })
+    }
+
+    if (parts[0] === 'sectors' && parts[1] && httpMethod === 'DELETE') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      const adminErr = requireGlobalAdmin(user)
+      if (adminErr) return adminErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      await getSupabase().from('sectors').delete().eq('id', parts[1])
+      await getSupabase().from('user_setores').delete().eq('setor_id', parts[1])
+      return json({ ok: true })
+    }
+
+    // ─── USER_SETORES / USER_EMPRESAS ──────────────────────────────────
+    if (route === 'user-setores' && httpMethod === 'GET') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      const userId = parseInt(user.id)
+      const { data } = await getSupabase().from('user_setores').select('*').eq('user_id', userId)
+      return json(data || [])
+    }
+
+    if (route === 'user-setores' && httpMethod === 'POST') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      const adminErr = requireAdmin(user)
+      if (adminErr) return adminErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const userId = parseInt(body.user_id)
+      const setorIds = body.setor_ids || []
+      if (!userId) return json({ ok: false, erro: 'user_id obrigatorio' }, 400)
+      await getSupabase().from('user_setores').delete().eq('user_id', userId)
+      for (const setorId of setorIds) {
+        await getSupabase().from('user_setores').insert({ user_id: userId, setor_id: setorId })
+      }
+      return json({ ok: true })
+    }
+
+    if (route === 'user-empresas' && httpMethod === 'GET') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      const userId = parseInt(user.id)
+      const { data } = await getSupabase().from('user_empresas').select('*').eq('user_id', userId)
+      return json(data || [])
+    }
+
+    if (route === 'user-empresas' && httpMethod === 'POST') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      const adminErr = requireAdmin(user)
+      if (adminErr) return adminErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const userId = parseInt(body.user_id)
+      const empresaIds = body.empresa_ids || []
+      if (!userId) return json({ ok: false, erro: 'user_id obrigatorio' }, 400)
+      await getSupabase().from('user_empresas').delete().eq('user_id', userId)
+      for (const empresaId of empresaIds) {
+        await getSupabase().from('user_empresas').insert({ user_id: userId, empresa_id: empresaId })
+      }
+      return json({ ok: true })
+    }
+
     // ─── CONTRACTS PUT ───────────────────────────────────────────────────
     if (parts[0] === 'contracts' && parts[1] && httpMethod === 'PUT') {
       const authErr = requireAuth(user)
@@ -849,7 +966,7 @@ export async function handler(event) {
       if (httpMethod === 'GET') {
         const authErr = requireAuth(user)
         if (authErr) return authErr
-        const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios, certidoes, licitacoes] = await Promise.all([
+        const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios, certidoes, licitacoes, sectors, userSetores] = await Promise.all([
           getSupabase().from('contracts').select('*').order('created_at', { ascending: false }),
           getSupabase().from('payments').select('*').order('vencimento'),
           getSupabase().from('users').select('id, username, full_name, role, created_at').order('id'),
@@ -858,6 +975,8 @@ export async function handler(event) {
           getSupabase().from('destinatarios').select('*').order('criado_em'),
           getSupabase().from('certidoes').select('*').order('created_at', { ascending: false }),
           getSupabase().from('licitacoes').select('*').order('created_at', { ascending: false }),
+          getSupabase().from('sectors').select('*').order('nome'),
+          getSupabase().from('user_setores').select('*'),
         ])
         return json({
           contratos: contratos.data || [],
@@ -867,7 +986,9 @@ export async function handler(event) {
           empresas: empresas.data || [],
           destinatarios: destinatarios.data || [],
           certidoes: certidoes.data || [],
-          licitacoes: licitacoes.data || []
+          licitacoes: licitacoes.data || [],
+          sectors: sectors.data || [],
+          user_setores: userSetores.data || []
         })
       }
 
