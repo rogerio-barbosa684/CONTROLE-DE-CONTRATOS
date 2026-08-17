@@ -40,8 +40,10 @@ function getSupabase() {
   const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) {
+    console.error('SUPABASE_URL:', url ? 'OK' : 'MISSING', 'SUPABASE_SERVICE_ROLE_KEY:', key ? 'OK' : 'MISSING')
     throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY devem estar configurados nas variaveis de ambiente do Netlify.')
   }
+  console.log('Connecting to Supabase:', url)
   _supabase = createClient(url, key)
   return _supabase
 }
@@ -1314,7 +1316,7 @@ export async function handler(event) {
     return json({ ok: false, erro: 'Rota nao encontrada' }, 404)
 
   } catch (e) {
-    console.error('API Error:', e)
-    return json({ ok: false, erro: 'Erro interno do servidor' }, 500)
+    console.error('API Error:', e.message, e.stack)
+    return json({ ok: false, erro: 'Erro interno: ' + e.message }, 500)
   }
 }
