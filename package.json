@@ -4,7 +4,7 @@
   "description": "Sistema de Controle de Contratos e Pagamentos",
   "type": "module",
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.3",
+    "@supabase/supabase-js": "^2.49.0",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^6.10.0",
     "pg": "^8.22.0"
