@@ -2,6 +2,11 @@ import { createClient } from '@supabase/supabase-js'
 import jwt from 'jsonwebtoken'
 import nodemailer from 'nodemailer'
 import crypto from 'crypto'
+import WebSocket from 'ws'
+
+if (typeof globalThis.WebSocket === 'undefined') {
+  globalThis.WebSocket = WebSocket
+}
 
 const JWT_SECRET = process.env.JWT_SECRET
 
