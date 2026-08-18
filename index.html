@@ -3168,6 +3168,7 @@ function loadFromServer() {
     if (contratos.length || pagamentos.length || (data.empresas && data.empresas.length)) {
       if (contratos.length) { cachedContratos = contratos; saveContratos(contratos); }
       if (pagamentos.length) { cachedPagamentos = pagamentos; savePagamentos(pagamentos); }
+    }
     const activePage = document.querySelector('.page.active');
     if (activePage) {
       const id = activePage.id.replace('page-', '');
