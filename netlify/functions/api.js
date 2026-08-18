@@ -44,7 +44,7 @@ function getSupabase() {
     throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY devem estar configurados nas variaveis de ambiente do Netlify.')
   }
   console.log('Connecting to Supabase:', url)
-  _supabase = createClient(url, key)
+  _supabase = createClient(url, key, { realtime: { eventsPerSecond: 0 } })
   return _supabase
 }
 
