@@ -745,6 +745,39 @@
       0%, 60%, 100% { transform: translateY(0); }
       30% { transform: translateY(-4px); }
     }
+    /* ─── CIDADE COMBOBOX ──────────────────────────────── */
+    .cidade-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      max-height: 200px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1.5px solid #d0d7e3;
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      z-index: 1100;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    }
+    .cidade-dropdown.open { display: block; }
+    .cidade-dropdown-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      color: #333;
+      transition: background 0.12s;
+    }
+    .cidade-dropdown-item:hover,
+    .cidade-dropdown-item.highlighted { background: #e8f0f8; }
+    .cidade-dropdown-empty { padding: 10px 12px; color: #999; font-size: 0.85rem; text-align: center; }
+    [data-theme="dark"] .cidade-dropdown { background: #2a2a2a; border-color: #444; }
+    [data-theme="dark"] .cidade-dropdown-item { color: #e0e0e0; }
+    [data-theme="dark"] .cidade-dropdown-item:hover,
+    [data-theme="dark"] .cidade-dropdown-item.highlighted { background: #333; }
+    [data-theme="dark"] .cidade-dropdown-empty { color: #777; }
+
     .pagination-controls { display:flex; align-items:center; gap:6px; margin-top:12px; flex-wrap:wrap; }
     .pg-btn { background:var(--card-bg,#fff); border:1px solid var(--border,#ddd); border-radius:6px; padding:5px 12px; font-size:0.82rem; cursor:pointer; color:var(--text,#333); transition:all .15s; }
     .pg-btn:hover:not(:disabled) { background:var(--accent,#1a5276); color:#fff; border-color:var(--accent,#1a5276); }
@@ -1131,6 +1164,12 @@
             <option value="">Todas</option>
           </select>
         </div>
+        <div class="form-group" style="min-width:120px;">
+          <label>Filtrar por UF</label>
+          <select id="filtro-ct-uf" onchange="renderCertidoes()">
+            <option value="">Todas</option>
+          </select>
+        </div>
         <div class="form-group" style="min-width:160px;">
           <label>Filtrar por Tipo</label>
           <select id="filtro-ct-tipo" onchange="renderCertidoes()">
@@ -1151,7 +1190,7 @@
         <table>
           <thead>
             <tr>
-              <th>Empresa</th><th>Tipo</th><th>Emissão</th><th>Validade</th>
+              <th>Empresa</th><th>CNPJ</th><th>UF</th><th>Cidade</th><th>Tipo</th><th>Emissão</th><th>Validade</th>
               <th>Status</th><th>Anexo</th><th>Ações</th>
             </tr>
           </thead>
@@ -1216,6 +1255,22 @@
         <div class="form-group">
           <label>Empresa *</label>
           <select id="mc-empresa"><option value="">Selecione...</option></select>
+        </div>
+        <div class="form-group">
+          <label>CNPJ</label>
+          <input type="text" id="mc-cnpj" placeholder="00.000.000/0001-00" oninput="onDocInput(this)" onblur="onDocBlur(this)" maxlength="18"/>
+        </div>
+        <div class="form-group" style="position:relative;">
+          <label>UF</label>
+          <input type="text" id="mc-uf" placeholder="Selecione..." oninput="onUfInput()" onfocus="onUfFocus()" onkeydown="onUfKeydown(event)" autocomplete="off"/>
+          <input type="hidden" id="mc-uf-val"/>
+          <div id="mc-uf-dropdown" class="cidade-dropdown"></div>
+        </div>
+        <div class="form-group" style="position:relative;">
+          <label>Cidade</label>
+          <input type="text" id="mc-cidade" placeholder="Selecione a UF primeiro..." oninput="onCidadeInput()" onfocus="onCidadeFocus()" onkeydown="onCidadeKeydown(event)" autocomplete="off"/>
+          <input type="hidden" id="mc-cidade-val"/>
+          <div id="mc-cidade-dropdown" class="cidade-dropdown"></div>
         </div>
         <div class="form-group">
           <label>Tipo da Certidão *</label>
@@ -3214,8 +3269,8 @@ function loadFromServer() {
           arquivo = { name: ct.arquivo_nome, data: '' };
         }
         return {
-          id: ct.id, empresaId: ct.empresa_id, tipo: ct.tipo,
-          dataEmissao: ct.data_emissao, dataValidade: ct.data_validade,
+          id: ct.id, empresaId: ct.empresa_id, cnpj: ct.cnpj || '', uf: ct.uf || '', cidade: ct.cidade || '',
+          tipo: ct.tipo, dataEmissao: ct.data_emissao, dataValidade: ct.data_validade,
           status: ct.status, arquivo: arquivo,
           obs: ct.observacoes || '', criadoEm: ct.criado_em
         };
@@ -3344,6 +3399,242 @@ const TIPOS_CERTIDAO = [
   'Outros'
 ];
 
+const UFS_BRASIL = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
+const UF_NOMES = {'AC':'Acre','AL':'Alagoas','AM':'Amazonas','AP':'Amapá','BA':'Bahia','CE':'Ceará','DF':'Distrito Federal','ES':'Espírito Santo','GO':'Goiás','MA':'Maranhão','MG':'Minas Gerais','MS':'Mato Grosso do Sul','MT':'Mato Grosso','PA':'Pará','PB':'Paraíba','PE':'Pernambuco','PI':'Piauí','PR':'Paraná','RJ':'Rio de Janeiro','RN':'Rio Grande do Norte','RO':'Rondônia','RR':'Roraima','RS':'Rio Grande do Sul','SC':'Santa Catarina','SE':'Sergipe','SP':'São Paulo','TO':'Tocantins'};
+
+let UF_CIDADES_CACHE = null;
+async function carregarCidades() {
+  if (UF_CIDADES_CACHE) return UF_CIDADES_CACHE;
+  try {
+    const resp = await fetch('/api/cidades');
+    UF_CIDADES_CACHE = await resp.json();
+  } catch(e) {
+    UF_CIDADES_CACHE = {};
+  }
+  return UF_CIDADES_CACHE;
+}
+
+let _ufsAtuais = [];
+let _ufHighlight = -1;
+
+function popularUfSelect() {
+  const input = document.getElementById('mc-uf');
+  const val = document.getElementById('mc-uf-val');
+  if (!input) return;
+  const atual = val.value;
+  input.value = '';
+  input.placeholder = 'Pesquisar ou selecionar...';
+  val.value = '';
+  _ufsAtuais = UFS_BRASIL.map(uf => uf + ' - ' + UF_NOMES[uf]);
+  fecharDropdownUf();
+  if (atual && UFS_BRASIL.includes(atual)) {
+    input.value = atual + ' - ' + UF_NOMES[atual];
+    val.value = atual;
+  }
+}
+
+function onUfInput() {
+  const input = document.getElementById('mc-uf');
+  const val = document.getElementById('mc-uf-val');
+  const termo = input.value.trim().toLowerCase();
+  val.value = '';
+  popularCidadesSelect();
+  _ufHighlight = -1;
+  if (!termo) { fecharDropdownUf(); return; }
+  const filtradas = _ufsAtuais.filter(u => u.toLowerCase().includes(termo));
+  mostrarDropdownUf(filtradas);
+}
+
+function onUfFocus() {
+  const input = document.getElementById('mc-uf');
+  const termo = input.value.trim().toLowerCase();
+  const filtradas = termo ? _ufsAtuais.filter(u => u.toLowerCase().includes(termo)) : _ufsAtuais;
+  mostrarDropdownUf(filtradas);
+}
+
+function mostrarDropdownUf(lista) {
+  const dd = document.getElementById('mc-uf-dropdown');
+  if (!dd) return;
+  dd.innerHTML = '';
+  _ufHighlight = -1;
+  if (!lista.length) { dd.innerHTML = '<div class="cidade-dropdown-empty">Nenhuma UF encontrada</div>'; dd.classList.add('open'); return; }
+  lista.forEach((u, i) => {
+    const div = document.createElement('div');
+    div.className = 'cidade-dropdown-item';
+    div.textContent = u;
+    div.dataset.uf = u.split(' - ')[0];
+    div.dataset.idx = i;
+    div.addEventListener('mousedown', (e) => { e.preventDefault(); selecionarUf(u); });
+    div.addEventListener('mouseenter', () => { _ufHighlight = i; atualizarHighlightUf(); });
+    dd.appendChild(div);
+  });
+  dd.classList.add('open');
+}
+
+function fecharDropdownUf() {
+  const dd = document.getElementById('mc-uf-dropdown');
+  if (dd) { dd.classList.remove('open'); dd.innerHTML = ''; }
+  _ufHighlight = -1;
+}
+
+function selecionarUf(ufTexto) {
+  const input = document.getElementById('mc-uf');
+  const val = document.getElementById('mc-uf-val');
+  const ufSigla = ufTexto.split(' - ')[0];
+  input.value = ufTexto;
+  val.value = ufSigla;
+  fecharDropdownUf();
+  popularCidadesSelect();
+}
+
+function atualizarHighlightUf() {
+  const dd = document.getElementById('mc-uf-dropdown');
+  if (!dd) return;
+  dd.querySelectorAll('.cidade-dropdown-item').forEach((el, i) => {
+    el.classList.toggle('highlighted', i === _ufHighlight);
+  });
+  const hl = dd.querySelector('.highlighted');
+  if (hl) hl.scrollIntoView({ block: 'nearest' });
+}
+
+function onUfKeydown(e) {
+  const dd = document.getElementById('mc-uf-dropdown');
+  if (!dd || !dd.classList.contains('open')) return;
+  const items = dd.querySelectorAll('.cidade-dropdown-item');
+  if (!items.length) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); _ufHighlight = Math.min(_ufHighlight + 1, items.length - 1); atualizarHighlightUf(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); _ufHighlight = Math.max(_ufHighlight - 1, 0); atualizarHighlightUf(); }
+  else if (e.key === 'Enter' && _ufHighlight >= 0) { e.preventDefault(); selecionarUf(items[_ufHighlight].textContent); }
+  else if (e.key === 'Escape') { fecharDropdownUf(); }
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#mc-uf') && !e.target.closest('#mc-uf-dropdown')) fecharDropdownUf();
+});
+
+let _cidadesAtuais = [];
+let _cidadeHighlight = -1;
+
+async function popularCidadesSelect() {
+  const input = document.getElementById('mc-cidade');
+  const val = document.getElementById('mc-cidade-val');
+  const dd = document.getElementById('mc-cidade-dropdown');
+  if (!input) return;
+  const uf = document.getElementById('mc-uf-val')?.value || '';
+  if (!uf) { input.value = ''; input.placeholder = 'Selecione a UF primeiro...'; val.value = ''; _cidadesAtuais = []; fecharDropdownCidade(); return; }
+  const dados = await carregarCidades();
+  const cidades = (dados[uf] || []).slice().sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  _cidadesAtuais = cidades;
+  const atual = val.value;
+  input.value = '';
+  input.placeholder = 'Pesquisar ou selecionar...';
+  val.value = '';
+  fecharDropdownCidade();
+  if (atual && cidades.includes(atual)) {
+    input.value = atual;
+    val.value = atual;
+  }
+}
+
+function limparBuscaCidade() {
+  const input = document.getElementById('mc-cidade');
+  const val = document.getElementById('mc-cidade-val');
+  if (input) { input.value = ''; input.placeholder = 'Selecione a UF primeiro...'; }
+  if (val) val.value = '';
+  fecharDropdownCidade();
+}
+
+function onCidadeInput() {
+  const input = document.getElementById('mc-cidade');
+  const val = document.getElementById('mc-cidade-val');
+  const termo = input.value.trim().toLowerCase();
+  val.value = '';
+  _cidadeHighlight = -1;
+  if (!termo || !_cidadesAtuais.length) { fecharDropdownCidade(); return; }
+  const filtradas = _cidadesAtuais.filter(c => c.toLowerCase().includes(termo));
+  mostrarDropdownCidade(filtradas);
+}
+
+function onCidadeFocus() {
+  const input = document.getElementById('mc-cidade');
+  const termo = input.value.trim().toLowerCase();
+  if (_cidadesAtuais.length) {
+    const filtradas = termo ? _cidadesAtuais.filter(c => c.toLowerCase().includes(termo)) : _cidadesAtuais;
+    mostrarDropdownCidade(filtradas);
+  }
+}
+
+function mostrarDropdownCidade(lista) {
+  const dd = document.getElementById('mc-cidade-dropdown');
+  if (!dd) return;
+  dd.innerHTML = '';
+  _cidadeHighlight = -1;
+  if (!lista.length) { dd.innerHTML = '<div class="cidade-dropdown-empty">Nenhuma cidade encontrada</div>'; dd.classList.add('open'); return; }
+  lista.forEach((c, i) => {
+    const div = document.createElement('div');
+    div.className = 'cidade-dropdown-item';
+    div.textContent = c;
+    div.dataset.cidade = c;
+    div.dataset.idx = i;
+    div.addEventListener('mousedown', (e) => { e.preventDefault(); selecionarCidade(c); });
+    div.addEventListener('mouseenter', () => { _cidadeHighlight = i; atualizarHighlightCidade(); });
+    dd.appendChild(div);
+  });
+  dd.classList.add('open');
+}
+
+function fecharDropdownCidade() {
+  const dd = document.getElementById('mc-cidade-dropdown');
+  if (dd) { dd.classList.remove('open'); dd.innerHTML = ''; }
+  _cidadeHighlight = -1;
+}
+
+function selecionarCidade(cidade) {
+  const input = document.getElementById('mc-cidade');
+  const val = document.getElementById('mc-cidade-val');
+  input.value = cidade;
+  val.value = cidade;
+  fecharDropdownCidade();
+}
+
+function atualizarHighlightCidade() {
+  const dd = document.getElementById('mc-cidade-dropdown');
+  if (!dd) return;
+  dd.querySelectorAll('.cidade-dropdown-item').forEach((el, i) => {
+    el.classList.toggle('highlighted', i === _cidadeHighlight);
+  });
+  const hl = dd.querySelector('.highlighted');
+  if (hl) hl.scrollIntoView({ block: 'nearest' });
+}
+
+function onCidadeKeydown(e) {
+  const dd = document.getElementById('mc-cidade-dropdown');
+  if (!dd || !dd.classList.contains('open')) return;
+  const items = dd.querySelectorAll('.cidade-dropdown-item');
+  if (!items.length) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); _cidadeHighlight = Math.min(_cidadeHighlight + 1, items.length - 1); atualizarHighlightCidade(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); _cidadeHighlight = Math.max(_cidadeHighlight - 1, 0); atualizarHighlightCidade(); }
+  else if (e.key === 'Enter' && _cidadeHighlight >= 0) { e.preventDefault(); selecionarCidade(items[_cidadeHighlight].dataset.cidade); }
+  else if (e.key === 'Escape') { fecharDropdownCidade(); }
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#mc-cidade') && !e.target.closest('#mc-cidade-dropdown')) fecharDropdownCidade();
+});
+
+function popularFiltroUfCertidoes() {
+  const sel = document.getElementById('filtro-ct-uf');
+  if (!sel) return;
+  const atual = sel.value;
+  sel.innerHTML = '<option value="">Todas</option>';
+  UFS_BRASIL.forEach(uf => {
+    const opt = document.createElement('option');
+    opt.value = uf; opt.textContent = uf;
+    sel.appendChild(opt);
+  });
+  if (atual) sel.value = atual;
+}
+
 function calcStatusCertidao(cert) {
   if (cert.status === 'pendente') return 'pendente';
   if (!cert.dataValidade) return cert.status || 'pendente';
@@ -3360,11 +3651,13 @@ function renderCertidoes(page) {
   const tb = document.getElementById('tb-certidoes');
   if (!tb) return;
   const empresaFilter = document.getElementById('filtro-ct-empresa')?.value || '';
+  const ufFilter = document.getElementById('filtro-ct-uf')?.value || '';
   const tipoFilter = document.getElementById('filtro-ct-tipo')?.value || '';
   const statusFilter = document.getElementById('filtro-ct-status')?.value || '';
 
   let lista = getCertidoes();
   if (empresaFilter) lista = lista.filter(c => c.empresaId === empresaFilter);
+  if (ufFilter) lista = lista.filter(c => c.uf === ufFilter);
   if (tipoFilter) lista = lista.filter(c => c.tipo === tipoFilter);
   if (statusFilter) lista = lista.filter(c => calcStatusCertidao(c) === statusFilter);
 
@@ -3376,7 +3669,7 @@ function renderCertidoes(page) {
   renderPagination(total, certCurrentPage, 'cert-pagination', 'renderCertidoes');
 
   if (!paginated.length) {
-    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:32px">Nenhuma certidão cadastrada.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#aaa;padding:32px">Nenhuma certidão cadastrada.</td></tr>';
     return;
   }
 
@@ -3389,6 +3682,9 @@ function renderCertidoes(page) {
     const arqBtn = arq ? `<button class="btn btn-sm btn-primary" onclick="previewAnexo('${arquivoData(c)}','${escapeHtml(arq.name || 'arquivo')}')" style="padding:2px 8px;font-size:0.75rem;">Ver</button>` : '—';
     return `<tr>
       <td>${escapeHtml(emp?.nome || '—')}</td>
+      <td>${c.cnpj || '—'}</td>
+      <td>${c.uf || '—'}</td>
+      <td>${c.cidade || '—'}</td>
       <td>${escapeHtml(c.tipo)}</td>
       <td>${c.dataEmissao ? fmtData(c.dataEmissao) : '—'}</td>
       <td>${c.dataValidade ? fmtData(c.dataValidade) : '—'}</td>
@@ -3455,18 +3751,36 @@ function popularModalCertidaoTipo() {
   });
 }
 
-function abrirModalCertidao(cert) {
+async function abrirModalCertidao(cert) {
   document.getElementById('mc-id').value = cert ? cert.id : '';
   document.getElementById('mc-empresa').value = cert ? cert.empresaId : '';
-  document.getElementById('mc-tipo').value = cert ? cert.tipo : '';
-  document.getElementById('mc-emissao').value = cert ? (cert.dataEmissao || '') : '';
-  document.getElementById('mc-validade').value = cert ? (cert.dataValidade || '') : '';
-  document.getElementById('mc-status').value = cert ? (cert.status || 'pendente') : 'pendente';
+  document.getElementById('mc-cnpj').value = cert ? (cert.cnpj || '') : '';
   document.getElementById('mc-obs').value = cert ? (cert.obs || '') : '';
   document.getElementById('mc-arquivo').value = '';
   document.getElementById('modal-certidao-title').textContent = cert ? 'Editar Certidão' : 'Nova Certidão';
   popularModalCertidaoEmpresa();
   popularModalCertidaoTipo();
+  popularUfSelect();
+  limparBuscaCidade();
+  if (cert && cert.uf) {
+    document.getElementById('mc-uf').value = cert.uf + ' - ' + (UF_NOMES[cert.uf] || cert.uf);
+    document.getElementById('mc-uf-val').value = cert.uf;
+    await popularCidadesSelect();
+    if (cert.cidade) {
+      document.getElementById('mc-cidade').value = cert.cidade;
+      document.getElementById('mc-cidade-val').value = cert.cidade;
+    }
+  } else {
+    _cidadesAtuais = [];
+    const input = document.getElementById('mc-cidade');
+    input.value = '';
+    input.placeholder = 'Selecione a UF primeiro...';
+    document.getElementById('mc-cidade-val').value = '';
+  }
+  document.getElementById('mc-tipo').value = cert ? cert.tipo : '';
+  document.getElementById('mc-emissao').value = cert ? (cert.dataEmissao || '') : '';
+  document.getElementById('mc-validade').value = cert ? (cert.dataValidade || '') : '';
+  document.getElementById('mc-status').value = cert ? (cert.status || 'pendente') : 'pendente';
   abrirModal('modal-certidao');
 }
 
@@ -3481,6 +3795,9 @@ async function salvarCertidao() {
   if (!empresaId || !tipo) {
     mostrarToast('Preencha Empresa e Tipo.', 'erro'); return;
   }
+  const cnpj = document.getElementById('mc-cnpj').value.trim();
+  const uf = document.getElementById('mc-uf-val').value;
+  const cidade = document.getElementById('mc-cidade-val').value;
   const dataEmissao = document.getElementById('mc-emissao').value;
   const dataValidade = document.getElementById('mc-validade').value;
   const status = document.getElementById('mc-status').value;
@@ -3500,6 +3817,9 @@ async function salvarCertidao() {
     const idx = certidoes.findIndex(c => c.id === editId);
     if (idx !== -1) {
       certidoes[idx].empresaId = empresaId;
+      certidoes[idx].cnpj = cnpj;
+      certidoes[idx].uf = uf;
+      certidoes[idx].cidade = cidade;
       certidoes[idx].tipo = tipo;
       certidoes[idx].dataEmissao = dataEmissao;
       certidoes[idx].dataValidade = dataValidade;
@@ -3509,7 +3829,7 @@ async function salvarCertidao() {
     }
   } else {
     certidoes.push({
-      id: uid(), empresaId, tipo, dataEmissao, dataValidade,
+      id: uid(), empresaId, cnpj, uf, cidade, tipo, dataEmissao, dataValidade,
       status, arquivo, obs, criadoEm: new Date().toISOString()
     });
   }
@@ -3964,7 +4284,7 @@ function showPage(id, btn) {
   if (id === 'contratos') renderContratos();
   if (id === 'pagamentos') renderPagamentos();
   if (id === 'novo-contrato') { limparFormContrato(); popularTipoSelect(); popularEmpresaSelect(); popularSetorSelect(); }
-  if (id === 'certidoes') { popularFiltroEmpresaCertidoes(); popularFiltroTipoCertidoes(); renderCertidoes(); }
+  if (id === 'certidoes') { popularFiltroEmpresaCertidoes(); popularFiltroUfCertidoes(); popularFiltroTipoCertidoes(); renderCertidoes(); }
   if (id === 'licitacoes') { popularFiltroEmpresaLicitacoes(); renderLicitacoes(); }
   if (id === 'configuracao') {
     const activeSub = document.querySelector('.config-section.active');

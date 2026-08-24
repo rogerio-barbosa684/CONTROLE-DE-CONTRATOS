@@ -129,6 +129,7 @@ async function main() {
   // Migrar certidoes
   await migrate('certidoes', 'certidoes', r => ({
     id: r.id, empresa_id: r.empresa_id || '',
+    cnpj: r.cnpj || '', uf: r.uf || '', cidade: r.cidade || '',
     tipo: r.tipo || '', data_emissao: r.data_emissao || '',
     data_validade: r.data_validade || '',
     status: r.status || 'pendente',

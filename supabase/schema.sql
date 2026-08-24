@@ -147,6 +147,9 @@ CREATE TABLE IF NOT EXISTS user_setores (
 CREATE TABLE IF NOT EXISTS certidoes (
   id TEXT PRIMARY KEY,
   empresa_id TEXT DEFAULT '',
+  cnpj TEXT DEFAULT '',
+  uf TEXT DEFAULT '',
+  cidade TEXT DEFAULT '',
   tipo TEXT DEFAULT '',
   data_emissao TEXT DEFAULT '',
   data_validade TEXT DEFAULT '',
