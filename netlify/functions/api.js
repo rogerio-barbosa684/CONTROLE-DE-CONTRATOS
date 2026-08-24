@@ -641,6 +641,30 @@ export async function handler(event) {
       return json({ ok: true, msg: 'Senha redefinida com sucesso!' })
     }
 
+    // ─── CHANGE PASSWORD (MINHA CONTA) ────────────────────────────────
+    if (route === 'change-password' && httpMethod === 'POST') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const { current_password, new_password } = body
+      if (!current_password || !new_password) return json({ ok: false, erro: 'Senha atual e nova senha sao obrigatorios.' }, 400)
+      if (new_password.length < 8) return json({ ok: false, erro: 'A nova senha deve ter no minimo 8 caracteres.' }, 400)
+      if (!/[A-Z]/.test(new_password) || !/[a-z]/.test(new_password) || !/[0-9]/.test(new_password)) {
+        return json({ ok: false, erro: 'A nova senha deve conter pelo menos 1 maiuscula, 1 minuscula e 1 numero.' }, 400)
+      }
+      const { data: dbUser } = await getSupabase().from('users').select('id, password_hash').eq('id', user.id).single()
+      if (!dbUser) return json({ ok: false, erro: 'Usuario nao encontrado.' }, 404)
+      const valid = await checkPassword(current_password, dbUser.password_hash)
+      if (!valid) return json({ ok: false, erro: 'Senha atual incorreta.' }, 400)
+      const hash = await hashPassword(new_password)
+      const { error } = await getSupabase().from('users').update({ password_hash: hash }).eq('id', user.id)
+      if (error) return json({ ok: false, erro: error.message }, 500)
+      await audit(user.id, 'UPDATE', 'user', user.id, 'Senha alterada')
+      return json({ ok: true, msg: 'Senha alterada com sucesso!' })
+    }
+
     // ─── CONFIG-EMAIL ────────────────────────────────────────────────────
     if (route === 'config-email') {
       if (httpMethod === 'GET') {
