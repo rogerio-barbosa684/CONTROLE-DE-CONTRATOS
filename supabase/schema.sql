@@ -154,10 +154,9 @@ CREATE TABLE IF NOT EXISTS certidoes (
   data_emissao TEXT DEFAULT '',
   data_validade TEXT DEFAULT '',
   status TEXT DEFAULT 'pendente',
-  arquivo TEXT DEFAULT '',
-  obs TEXT DEFAULT '',
-  created_by INTEGER,
-  updated_at TEXT,
+  arquivo_nome TEXT DEFAULT '',
+  arquivo_dados TEXT DEFAULT '',
+  observacoes TEXT DEFAULT '',
   criado_em TEXT NOT NULL DEFAULT (now()::text)
 );
 
@@ -176,12 +175,9 @@ CREATE TABLE IF NOT EXISTS licitacoes (
   data_inicio TEXT DEFAULT '',
   data_fim TEXT DEFAULT '',
   status TEXT DEFAULT 'em_andamento',
-  arquivo_edital TEXT DEFAULT '',
-  arquivo_contrato TEXT DEFAULT '',
   arquivos TEXT DEFAULT '[]',
-  obs TEXT DEFAULT '',
-  created_by INTEGER,
-  updated_at TEXT,
+  resumo TEXT,
+  observacoes TEXT DEFAULT '',
   criado_em TEXT NOT NULL DEFAULT (now()::text)
 );
 

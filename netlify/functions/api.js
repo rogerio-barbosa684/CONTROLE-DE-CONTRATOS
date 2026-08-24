@@ -1216,27 +1216,32 @@ export async function handler(event) {
           const tipo = (ct.tipo || '').trim()
           if (!ctid || !tipo) { importados.ignorados++; continue }
           try {
-            let arquivoStr = null
+            let arquivoDadosStr = null
+            let arquivoNomeStr = ''
             if (ct.arquivo) {
               const tmp = JSON.stringify(ct.arquivo)
-              arquivoStr = tmp.length > MAX_BASE64 ? null : tmp
+              if (tmp.length <= MAX_BASE64) {
+                arquivoDadosStr = tmp
+                arquivoNomeStr = ct.arquivo.name || ''
+              }
             }
             const { data: existing } = await getSupabase().from('certidoes').select('id').eq('id', ctid).single()
             const vals = {
-              empresa_id: ct.empresaId,
+              empresa_id: ct.empresaId || '',
               cnpj: (ct.cnpj || '').trim(),
               uf: (ct.uf || '').trim(),
               cidade: (ct.cidade || '').trim(),
-              tipo, data_emissao: ct.dataEmissao || null,
-              data_validade: ct.dataValidade || null, status: ct.status || 'pendente',
-              arquivo: arquivoStr,
-              obs: (ct.obs || '').trim(), updated_at: new Date().toISOString()
+              tipo, data_emissao: ct.dataEmissao || '',
+              data_validade: ct.dataValidade || '', status: ct.status || 'pendente',
+              arquivo_nome: arquivoNomeStr,
+              arquivo_dados: arquivoDadosStr,
+              observacoes: (ct.obs || '').trim()
             }
             if (existing) {
               const { error } = await getSupabase().from('certidoes').update(vals).eq('id', ctid)
               if (error) { await audit(user.id, 'SYNC_ERROR', 'certidoes', ctid, `Update: ${error.message}`); importados.ignorados++; continue }
             } else {
-              const { error } = await getSupabase().from('certidoes').insert({ id: ctid, ...vals, created_by: user.id })
+              const { error } = await getSupabase().from('certidoes').insert({ id: ctid, ...vals })
               if (error) { await audit(user.id, 'SYNC_ERROR', 'certidoes', ctid, `Insert: ${error.message}`); importados.ignorados++; continue }
             }
             importados.certidoes = (importados.certidoes || 0) + 1
@@ -1252,22 +1257,24 @@ export async function handler(event) {
           if (!lcid || !numero) { importados.ignorados++; continue }
           try {
             const { data: existing } = await getSupabase().from('licitacoes').select('id').eq('id', lcid).single()
+            const arquivos = []
+            if (lc.arquivoEdital) arquivos.push({ ...lc.arquivoEdital, tipo: 'edital' })
+            if (lc.arquivoContrato) arquivos.push({ ...lc.arquivoContrato, tipo: 'contrato' })
             const vals = {
               numero_licitacao: numero, edital: (lc.edital || '').trim(),
-              objeto: (lc.objeto || '').trim(), empresa_id: lc.empresaId || null,
-              contrato_id: lc.contratoId || null, valor: safeFloat(lc.valor),
-              data_homologacao: lc.dataHomologacao || null,
-              data_inicio: lc.dataInicio || null, data_fim: lc.dataFim || null,
+              objeto: (lc.objeto || '').trim(), empresa_id: lc.empresaId || '',
+              contrato_id: lc.contratoId || '', valor: safeFloat(lc.valor),
+              data_homologacao: lc.dataHomologacao || '',
+              data_inicio: lc.dataInicio || '', data_fim: lc.dataFim || '',
               status: lc.status || 'em_andamento',
-              arquivo_edital: lc.arquivoEdital ? JSON.stringify(lc.arquivoEdital) : null,
-              arquivo_contrato: lc.arquivoContrato ? JSON.stringify(lc.arquivoContrato) : null,
-              obs: (lc.obs || '').trim(), updated_at: new Date().toISOString()
+              arquivos: JSON.stringify(arquivos),
+              observacoes: (lc.obs || '').trim()
             }
             if (existing) {
               const { error } = await getSupabase().from('licitacoes').update(vals).eq('id', lcid)
               if (error) { await audit(user.id, 'SYNC_ERROR', 'licitacoes', lcid, error.message); importados.ignorados++; continue }
             } else {
-              const { error } = await getSupabase().from('licitacoes').insert({ id: lcid, ...vals, created_by: user.id })
+              const { error } = await getSupabase().from('licitacoes').insert({ id: lcid, ...vals })
               if (error) { await audit(user.id, 'SYNC_ERROR', 'licitacoes', lcid, error.message); importados.ignorados++; continue }
             }
             importados.licitacoes = (importados.licitacoes || 0) + 1
@@ -1337,12 +1344,12 @@ export async function handler(event) {
         uf: (body.uf || '').trim(),
         cidade: (body.cidade || '').trim(),
         tipo,
-        data_emissao: body.data_emissao || null,
-        data_validade: body.data_validade || null,
+        data_emissao: body.data_emissao || '',
+        data_validade: body.data_validade || '',
         status: body.status || 'pendente',
-        arquivo: body.arquivo || null,
-        obs: (body.obs || '').trim(),
-        created_by: user.id
+        arquivo_nome: body.arquivo_nome || '',
+        arquivo_dados: body.arquivo_dados || '',
+        observacoes: (body.obs || '').trim()
       })
       if (error) return json({ ok: false, erro: error.message }, 500)
       await audit(user.id, 'CREATE', 'certidao', cid, `Certidao ${tipo} criada`)
@@ -1355,7 +1362,7 @@ export async function handler(event) {
       if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
-      const upd = { updated_at: new Date().toISOString() }
+      const upd = {}
       if (body.empresa_id !== undefined) upd.empresa_id = body.empresa_id
       if (body.cnpj !== undefined) upd.cnpj = (body.cnpj || '').trim()
       if (body.uf !== undefined) upd.uf = (body.uf || '').trim()
@@ -1364,8 +1371,9 @@ export async function handler(event) {
       if (body.data_emissao !== undefined) upd.data_emissao = body.data_emissao
       if (body.data_validade !== undefined) upd.data_validade = body.data_validade
       if (body.status !== undefined) upd.status = body.status
-      if (body.arquivo !== undefined) upd.arquivo = body.arquivo
-      if (body.obs !== undefined) upd.obs = body.obs
+      if (body.arquivo_nome !== undefined) upd.arquivo_nome = body.arquivo_nome
+      if (body.arquivo_dados !== undefined) upd.arquivo_dados = body.arquivo_dados
+      if (body.obs !== undefined) upd.observacoes = body.obs
       const { error } = await getSupabase().from('certidoes').update(upd).eq('id', parts[1])
       if (error) return json({ ok: false, erro: error.message }, 500)
       await audit(user.id, 'UPDATE', 'certidao', parts[1], `Certidao atualizada`)
@@ -1403,14 +1411,13 @@ export async function handler(event) {
       if (!numero || !objeto) return json({ ok: false, erro: 'Numero da licitacao e objeto sao obrigatorios.' }, 400)
       const { error } = await getSupabase().from('licitacoes').insert({
         id: lid, numero_licitacao: numero, edital: (body.edital || '').trim(),
-        objeto, empresa_id: body.empresa_id || null,
-        contrato_id: body.contrato_id || null, valor: safeFloat(body.valor),
-        data_homologacao: body.data_homologacao || null,
-        data_inicio: body.data_inicio || null, data_fim: body.data_fim || null,
+        objeto, empresa_id: body.empresa_id || '',
+        contrato_id: body.contrato_id || '', valor: safeFloat(body.valor),
+        data_homologacao: body.data_homologacao || '',
+        data_inicio: body.data_inicio || '', data_fim: body.data_fim || '',
         status: body.status || 'em_andamento',
-        arquivo_edital: body.arquivo_edital || null,
-        arquivo_contrato: body.arquivo_contrato || null,
-        obs: (body.obs || '').trim(), created_by: user.id
+        arquivos: body.arquivos || '[]',
+        observacoes: (body.obs || '').trim()
       })
       if (error) return json({ ok: false, erro: error.message }, 500)
       await audit(user.id, 'CREATE', 'licitacao', lid, `Licitacao ${numero} criada`)
@@ -1434,9 +1441,8 @@ export async function handler(event) {
       if (body.data_inicio !== undefined) upd.data_inicio = body.data_inicio
       if (body.data_fim !== undefined) upd.data_fim = body.data_fim
       if (body.status !== undefined) upd.status = body.status
-      if (body.arquivo_edital !== undefined) upd.arquivo_edital = body.arquivo_edital
-      if (body.arquivo_contrato !== undefined) upd.arquivo_contrato = body.arquivo_contrato
-      if (body.obs !== undefined) upd.obs = body.obs
+      if (body.arquivos !== undefined) upd.arquivos = body.arquivos
+      if (body.obs !== undefined) upd.observacoes = body.obs
       const { error } = await getSupabase().from('licitacoes').update(upd).eq('id', parts[1])
       if (error) return json({ ok: false, erro: error.message }, 500)
       await audit(user.id, 'UPDATE', 'licitacao', parts[1], `Licitacao atualizada`)
