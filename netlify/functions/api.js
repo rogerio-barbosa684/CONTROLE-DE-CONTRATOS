@@ -1059,8 +1059,8 @@ export async function handler(event) {
           getSupabase().from('additives').select('*').order('created_at'),
           getSupabase().from('companies').select('*').order('nome'),
           getSupabase().from('destinatarios').select('*').order('criado_em'),
-          getSupabase().from('certidoes').select('*').order('created_at', { ascending: false }),
-          getSupabase().from('licitacoes').select('*').order('created_at', { ascending: false }),
+          getSupabase().from('certidoes').select('*').order('criado_em', { ascending: false }),
+          getSupabase().from('licitacoes').select('*').order('criado_em', { ascending: false }),
           getSupabase().from('sectors').select('*').order('nome'),
           getSupabase().from('user_setores').select('*'),
         ])
@@ -1099,26 +1099,29 @@ export async function handler(event) {
           if (cnpjVal && !validarCpfCnpj(cnpjVal)) {
             return json({ ok: false, erro: `CPF/CNPJ invalido no contrato ${numero}: ${cnpjVal}` }, 400)
           }
-          const pgto = c.pgtoConfig || {}
-          const arquivoJson = c.arquivo ? JSON.stringify(c.arquivo) : null
-          const { data: existing } = await getSupabase().from('contracts').select('id').eq('id', cid).single()
-          const vals = {
-            numero, fornecedor: (c.parte || '').trim(), cnpj: (c.doc || '').trim(),
-            objeto: (c.objeto || '').trim(), valor_total: parseFloat(c.valor || 0),
-            inicio: (c.inicio || '').trim(), fim: (c.fim || '').trim(),
-            tem_parcelas: c.temParcelas ? 1 : 0, qtd_parcelas: pgto.qtdParcelas,
-            valor_parcela: safeFloat(pgto.valorParcela), dia_vencimento: pgto.diaVenc,
-            responsavel: (c.responsavel || '').trim(), setor: (c.setor || '').trim(),
-            obs: (c.obs || '').trim(), tipo: c.tipo, empresa_id: c.empresaId,
-            active: c.active !== undefined ? (c.active ? 1 : 0) : 1,
-            forma_pagamento: pgto.forma, arquivo_contrato: arquivoJson
-          }
-          if (existing) {
-            await getSupabase().from('contracts').update({ ...vals, updated_at: new Date().toISOString() }).eq('id', cid)
-          } else {
-            await getSupabase().from('contracts').insert({ id: cid, ...vals, created_by: 1 })
-          }
-          importados.contratos++
+          try {
+            const pgto = c.pgtoConfig || {}
+            const arquivoJson = c.arquivo ? JSON.stringify(c.arquivo) : null
+            const { data: existing } = await getSupabase().from('contracts').select('id').eq('id', cid).single()
+            const vals = {
+              numero, fornecedor: (c.parte || '').trim(), cnpj: (c.doc || '').trim(),
+              objeto: (c.objeto || '').trim(), valor_total: parseFloat(c.valor || 0),
+              inicio: (c.inicio || '').trim(), fim: (c.fim || '').trim(),
+              tem_parcelas: c.temParcelas ? 1 : 0, qtd_parcelas: pgto.qtdParcelas,
+              valor_parcela: safeFloat(pgto.valorParcela), dia_vencimento: pgto.diaVenc,
+              responsavel: (c.responsavel || '').trim(), setor: (c.setor || '').trim(),
+              obs: (c.obs || '').trim(), tipo: c.tipo, empresa_id: c.empresaId,
+              active: c.active !== undefined ? (c.active ? 1 : 0) : 1,
+              forma_pagamento: pgto.forma, arquivo_contrato: arquivoJson
+            }
+            if (existing) {
+              const { error } = await getSupabase().from('contracts').update({ ...vals, updated_at: new Date().toISOString() }).eq('id', cid)
+              if (error) { await audit(user.id, 'SYNC_ERROR', 'contracts', cid, `Update: ${error.message}`); importados.ignorados++; continue }
+            } else {
+              const { error } = await getSupabase().from('contracts').insert({ id: cid, ...vals, created_by: user.id })
+              if (error) { await audit(user.id, 'SYNC_ERROR', 'contracts', cid, `Insert: ${error.message}`); importados.ignorados++; continue }
+            }
+            importados.contratos++
 
           if (c.aditivos?.length) {
             await getSupabase().from('additives').delete().eq('contract_id', cid)
@@ -1126,15 +1129,25 @@ export async function handler(event) {
               if (a.arquivo?.data?.length > MAX_BASE64) {
                 return json({ ok: false, erro: 'Arquivo de aditivo excede 10MB.' }, 400)
               }
-              const arqJson = a.arquivo ? JSON.stringify(a.arquivo) : null
-              await getSupabase().from('additives').insert({
-                id: a.id || crypto.randomUUID(), contract_id: cid, numero: a.numero,
-                data_aditivo: a.data || '', tipo: a.tipo, nova_data_fim: a.novaData,
-                acrescimo_valor: a.novoValor, descricao: a.objeto || '',
-                arquivo_contrato: arqJson, created_by: 1
-              })
-              importados.aditivos++
+              try {
+                const arqJson = a.arquivo ? JSON.stringify(a.arquivo) : null
+                const { error } = await getSupabase().from('additives').insert({
+                  id: a.id || crypto.randomUUID(), contract_id: cid, numero: a.numero,
+                  data_aditivo: a.data || '', tipo: a.tipo, nova_data_fim: a.novaData,
+                  acrescimo_valor: a.novoValor, descricao: a.objeto || '',
+                  arquivo_contrato: arqJson, created_by: user.id
+                })
+                if (error) { await audit(user.id, 'SYNC_ERROR', 'additives', a.id, error.message); importados.ignorados++; continue }
+                importados.aditivos++
+              } catch (e) {
+                await audit(user.id, 'SYNC_ERROR', 'additives', a.id, e.message)
+                importados.ignorados++
+              }
             }
+          }
+          } catch (e) {
+            await audit(user.id, 'SYNC_ERROR', 'contracts', cid, e.message)
+            importados.ignorados++
           }
         }
 
@@ -1152,84 +1165,116 @@ export async function handler(event) {
           if (p.comprovante?.data?.length > MAX_BASE64) {
             return json({ ok: false, erro: 'Comprovante de pagamento excede 10MB.' }, 400)
           }
-          const valor = parseFloat(p.valor || 0)
-          const dataPag = (p.dataPagamento || '').trim() || null
-          const comprovanteJson = p.comprovante ? JSON.stringify(p.comprovante) : null
-          await getSupabase().from('payments').insert({
-            id: pid, contract_id: cid, descricao, vencimento, valor,
-            contrato_num: (p.contratoNum || '').trim() || null,
-            data_pagamento: dataPag, valor_pago: safeFloat(p.valorPago) || (dataPag ? valor : null),
-            forma_pagamento: (p.formaPgto || '').trim() || null,
-            status: dataPag ? 'pago' : 'pendente', obs: (p.obs || '').trim(),
-            comprovante: comprovanteJson, created_by: 1
-          })
-          importados.pagamentos++
+          try {
+            const valor = parseFloat(p.valor || 0)
+            const dataPag = (p.dataPagamento || '').trim() || null
+            const comprovanteJson = p.comprovante ? JSON.stringify(p.comprovante) : null
+            const { error } = await getSupabase().from('payments').insert({
+              id: pid, contract_id: cid, descricao, vencimento, valor,
+              contrato_num: (p.contratoNum || '').trim() || null,
+              data_pagamento: dataPag, valor_pago: safeFloat(p.valorPago) || (dataPag ? valor : null),
+              forma_pagamento: (p.formaPgto || '').trim() || null,
+              status: dataPag ? 'pago' : 'pendente', obs: (p.obs || '').trim(),
+              comprovante: comprovanteJson, created_by: user.id
+            })
+            if (error) { await audit(user.id, 'SYNC_ERROR', 'payments', pid, error.message); importados.ignorados++; continue }
+            importados.pagamentos++
+          } catch (e) {
+            await audit(user.id, 'SYNC_ERROR', 'payments', pid, e.message)
+            importados.ignorados++
+          }
         }
 
         for (const d of (body.destinatarios || [])) {
           const did = (d.id || '').trim()
           const email = (d.email || '').trim()
           if (!did || !email) { importados.ignorados++; continue }
-          const { data: existing } = await getSupabase().from('destinatarios').select('id').eq('id', did).single()
-          if (existing) {
-            await getSupabase().from('destinatarios').update({
-              email, nome: (d.nome || '').trim(),
-              empresa_ids: JSON.stringify(d.empresaIds || [])
-            }).eq('id', did)
-          } else {
-            await getSupabase().from('destinatarios').insert({
-              id: did, email, nome: (d.nome || '').trim(),
-              empresa_ids: JSON.stringify(d.empresaIds || [])
-            })
+          try {
+            const { data: existing } = await getSupabase().from('destinatarios').select('id').eq('id', did).single()
+            if (existing) {
+              const { error } = await getSupabase().from('destinatarios').update({
+                email, nome: (d.nome || '').trim(),
+                empresa_ids: JSON.stringify(d.empresaIds || [])
+              }).eq('id', did)
+              if (error) { await audit(user.id, 'SYNC_ERROR', 'destinatarios', did, error.message); importados.ignorados++; continue }
+            } else {
+              const { error } = await getSupabase().from('destinatarios').insert({
+                id: did, email, nome: (d.nome || '').trim(),
+                empresa_ids: JSON.stringify(d.empresaIds || [])
+              })
+              if (error) { await audit(user.id, 'SYNC_ERROR', 'destinatarios', did, error.message); importados.ignorados++; continue }
+            }
+            importados.destinatarios = (importados.destinatarios || 0) + 1
+          } catch (e) {
+            await audit(user.id, 'SYNC_ERROR', 'destinatarios', did, e.message)
+            importados.ignorados++
           }
-          importados.destinatarios = (importados.destinatarios || 0) + 1
         }
 
         for (const ct of (body.certidoes || [])) {
           const ctid = (ct.id || '').trim()
           const tipo = (ct.tipo || '').trim()
           if (!ctid || !tipo) { importados.ignorados++; continue }
-          const { data: existing } = await getSupabase().from('certidoes').select('id').eq('id', ctid).single()
-          const vals = {
-            empresa_id: ct.empresaId,
-            cnpj: (ct.cnpj || '').trim(),
-            uf: (ct.uf || '').trim(),
-            cidade: (ct.cidade || '').trim(),
-            tipo, data_emissao: ct.dataEmissao || null,
-            data_validade: ct.dataValidade || null, status: ct.status || 'pendente',
-            arquivo: ct.arquivo ? JSON.stringify(ct.arquivo) : null,
-            obs: (ct.obs || '').trim(), updated_at: new Date().toISOString()
+          try {
+            let arquivoStr = null
+            if (ct.arquivo) {
+              const tmp = JSON.stringify(ct.arquivo)
+              arquivoStr = tmp.length > MAX_BASE64 ? null : tmp
+            }
+            const { data: existing } = await getSupabase().from('certidoes').select('id').eq('id', ctid).single()
+            const vals = {
+              empresa_id: ct.empresaId,
+              cnpj: (ct.cnpj || '').trim(),
+              uf: (ct.uf || '').trim(),
+              cidade: (ct.cidade || '').trim(),
+              tipo, data_emissao: ct.dataEmissao || null,
+              data_validade: ct.dataValidade || null, status: ct.status || 'pendente',
+              arquivo: arquivoStr,
+              obs: (ct.obs || '').trim(), updated_at: new Date().toISOString()
+            }
+            if (existing) {
+              const { error } = await getSupabase().from('certidoes').update(vals).eq('id', ctid)
+              if (error) { await audit(user.id, 'SYNC_ERROR', 'certidoes', ctid, `Update: ${error.message}`); importados.ignorados++; continue }
+            } else {
+              const { error } = await getSupabase().from('certidoes').insert({ id: ctid, ...vals, created_by: user.id })
+              if (error) { await audit(user.id, 'SYNC_ERROR', 'certidoes', ctid, `Insert: ${error.message}`); importados.ignorados++; continue }
+            }
+            importados.certidoes = (importados.certidoes || 0) + 1
+          } catch (e) {
+            await audit(user.id, 'SYNC_ERROR', 'certidoes', ctid, e.message)
+            importados.ignorados++
           }
-          if (existing) {
-            await getSupabase().from('certidoes').update(vals).eq('id', ctid)
-          } else {
-            await getSupabase().from('certidoes').insert({ id: ctid, ...vals, created_by: 1 })
-          }
-          importados.certidoes = (importados.certidoes || 0) + 1
         }
 
         for (const lc of (body.licitacoes || [])) {
           const lcid = (lc.id || '').trim()
           const numero = (lc.numeroLicitacao || '').trim()
           if (!lcid || !numero) { importados.ignorados++; continue }
-          const { data: existing } = await getSupabase().from('licitacoes').select('id').eq('id', lcid).single()
-          const vals = {
-            numero_licitacao: numero, edital: (lc.edital || '').trim(),
-            objeto: (lc.objeto || '').trim(), empresa_id: lc.empresaId || null,
-            contrato_id: lc.contratoId || null, valor: safeFloat(lc.valor),
-            data_homologacao: lc.dataHomologacao || null,
-            data_inicio: lc.dataInicio || null, data_fim: lc.dataFim || null,
-            status: lc.status || 'em_andamento',
-            arquivo_edital: lc.arquivoEdital ? JSON.stringify(lc.arquivoEdital) : null,
-            arquivo_contrato: lc.arquivoContrato ? JSON.stringify(lc.arquivoContrato) : null,
-            obs: (lc.obs || '').trim(), updated_at: new Date().toISOString()
+          try {
+            const { data: existing } = await getSupabase().from('licitacoes').select('id').eq('id', lcid).single()
+            const vals = {
+              numero_licitacao: numero, edital: (lc.edital || '').trim(),
+              objeto: (lc.objeto || '').trim(), empresa_id: lc.empresaId || null,
+              contrato_id: lc.contratoId || null, valor: safeFloat(lc.valor),
+              data_homologacao: lc.dataHomologacao || null,
+              data_inicio: lc.dataInicio || null, data_fim: lc.dataFim || null,
+              status: lc.status || 'em_andamento',
+              arquivo_edital: lc.arquivoEdital ? JSON.stringify(lc.arquivoEdital) : null,
+              arquivo_contrato: lc.arquivoContrato ? JSON.stringify(lc.arquivoContrato) : null,
+              obs: (lc.obs || '').trim(), updated_at: new Date().toISOString()
+            }
+            if (existing) {
+              const { error } = await getSupabase().from('licitacoes').update(vals).eq('id', lcid)
+              if (error) { await audit(user.id, 'SYNC_ERROR', 'licitacoes', lcid, error.message); importados.ignorados++; continue }
+            } else {
+              const { error } = await getSupabase().from('licitacoes').insert({ id: lcid, ...vals, created_by: user.id })
+              if (error) { await audit(user.id, 'SYNC_ERROR', 'licitacoes', lcid, error.message); importados.ignorados++; continue }
+            }
+            importados.licitacoes = (importados.licitacoes || 0) + 1
+          } catch (e) {
+            await audit(user.id, 'SYNC_ERROR', 'licitacoes', lcid, e.message)
+            importados.ignorados++
           }
-          if (existing) {
-            await getSupabase().from('licitacoes').update(vals).eq('id', lcid)
-          } else {
-            await getSupabase().from('licitacoes').insert({ id: lcid, ...vals, created_by: 1 })
-          }
-          importados.licitacoes = (importados.licitacoes || 0) + 1
         }
 
         await audit(user.id, 'SYNC', 'system', '', `Sincronizacao concluida: ${JSON.stringify(importados)}`)
@@ -1272,7 +1317,7 @@ export async function handler(event) {
     if (route === 'certidoes' && httpMethod === 'GET') {
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      const { data } = await getSupabase().from('certidoes').select('*').order('created_at', { ascending: false })
+      const { data } = await getSupabase().from('certidoes').select('*').order('criado_em', { ascending: false })
       return json(data || [])
     }
 
@@ -1321,7 +1366,8 @@ export async function handler(event) {
       if (body.status !== undefined) upd.status = body.status
       if (body.arquivo !== undefined) upd.arquivo = body.arquivo
       if (body.obs !== undefined) upd.obs = body.obs
-      await getSupabase().from('certidoes').update(upd).eq('id', parts[1])
+      const { error } = await getSupabase().from('certidoes').update(upd).eq('id', parts[1])
+      if (error) return json({ ok: false, erro: error.message }, 500)
       await audit(user.id, 'UPDATE', 'certidao', parts[1], `Certidao atualizada`)
       return json({ ok: true })
     }
@@ -1341,7 +1387,7 @@ export async function handler(event) {
     if (route === 'licitacoes' && httpMethod === 'GET') {
       const authErr = requireAuth(user)
       if (authErr) return authErr
-      const { data } = await getSupabase().from('licitacoes').select('*').order('created_at', { ascending: false })
+      const { data } = await getSupabase().from('licitacoes').select('*').order('criado_em', { ascending: false })
       return json(data || [])
     }
 
@@ -1391,7 +1437,8 @@ export async function handler(event) {
       if (body.arquivo_edital !== undefined) upd.arquivo_edital = body.arquivo_edital
       if (body.arquivo_contrato !== undefined) upd.arquivo_contrato = body.arquivo_contrato
       if (body.obs !== undefined) upd.obs = body.obs
-      await getSupabase().from('licitacoes').update(upd).eq('id', parts[1])
+      const { error } = await getSupabase().from('licitacoes').update(upd).eq('id', parts[1])
+      if (error) return json({ ok: false, erro: error.message }, 500)
       await audit(user.id, 'UPDATE', 'licitacao', parts[1], `Licitacao atualizada`)
       return json({ ok: true })
     }

@@ -3159,7 +3159,13 @@ function syncToServer() {
     fetch('/api/sync', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
       body:JSON.stringify({ contratos: cachedContratos || [], pagamentos: cachedPagamentos || [], destinatarios: cachedDestinatarios || [], certidoes: cachedCertidoes || [], licitacoes: cachedLicitacoes || [] })
-    }).catch(() => {});
+    }).then(r => r.json()).then(resp => {
+      if (resp && !resp.ok) {
+        console.error('[SYNC] Erro do servidor:', resp.erro)
+      }
+    }).catch(e => {
+      console.error('[SYNC] Falha na conexao:', e)
+    });
   });
 }
 
@@ -3262,17 +3268,14 @@ function loadFromServer() {
     if (data.certidoes && data.certidoes.length) {
       const serverCerts = data.certidoes.map(ct => {
         let arquivo = null;
-        if (ct.arquivo_dados) {
-          try { arquivo = JSON.parse(ct.arquivo_dados); } catch(e) {}
-        }
-        if (!arquivo && ct.arquivo_nome) {
-          arquivo = { name: ct.arquivo_nome, data: '' };
+        if (ct.arquivo) {
+          try { arquivo = JSON.parse(ct.arquivo); } catch(e) {}
         }
         return {
           id: ct.id, empresaId: ct.empresa_id, cnpj: ct.cnpj || '', uf: ct.uf || '', cidade: ct.cidade || '',
           tipo: ct.tipo, dataEmissao: ct.data_emissao, dataValidade: ct.data_validade,
           status: ct.status, arquivo: arquivo,
-          obs: ct.observacoes || '', criadoEm: ct.criado_em
+          obs: ct.obs || '', criadoEm: ct.criado_em
         };
       });
       cachedCertidoes = serverCerts; saveCertidoes(serverCerts);
@@ -3283,11 +3286,11 @@ function loadFromServer() {
         if (lc.arquivos) {
           try { arquivos = typeof lc.arquivos === 'string' ? JSON.parse(lc.arquivos) : lc.arquivos; } catch(e) {}
         }
-        if (!arquivos.length && lc.arquivo_edital_dados) {
-          try { arquivos.push({ ...JSON.parse(lc.arquivo_edital_dados), tipo: 'edital' }); } catch(e) {}
+        if (!arquivos.length && lc.arquivo_edital) {
+          try { arquivos.push({ ...JSON.parse(lc.arquivo_edital), tipo: 'edital' }); } catch(e) {}
         }
-        if (!arquivos.filter(a => a.tipo === 'contrato').length && lc.arquivo_contrato_dados) {
-          try { arquivos.push({ ...JSON.parse(lc.arquivo_contrato_dados), tipo: 'contrato' }); } catch(e) {}
+        if (!arquivos.filter(a => a.tipo === 'contrato').length && lc.arquivo_contrato) {
+          try { arquivos.push({ ...JSON.parse(lc.arquivo_contrato), tipo: 'contrato' }); } catch(e) {}
         }
         return {
           id: lc.id, numeroLicitacao: lc.numero_licitacao, edital: lc.edital,
@@ -3296,7 +3299,7 @@ function loadFromServer() {
           valor: lc.valor, dataHomologacao: lc.data_homologacao,
           dataInicio: lc.data_inicio, dataFim: lc.data_fim,
           status: lc.status, arquivos: arquivos,
-          obs: lc.observacoes || '', criadoEm: lc.criado_em
+          obs: lc.obs || '', criadoEm: lc.criado_em
         };
       });
       cachedLicitacoes = serverLics; saveLicitacoes(serverLics);
