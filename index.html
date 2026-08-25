@@ -1035,8 +1035,8 @@
           <textarea id="f-obs" placeholder="Informações adicionais..."></textarea>
         </div>
         <div class="form-group full">
-          <label>Documento do Contrato (PDF/Imagem)</label>
-          <input type="file" id="f-arquivo" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" style="background:#fff; padding:6px; cursor:pointer;" onchange="onArquivoChange(this)"/>
+          <label>Documento do Contrato (PDF/Imagem) *</label>
+          <input type="file" id="f-arquivo" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" style="background:#fff; padding:6px; cursor:pointer;" onchange="onArquivoChange(this)" required/>
         <small id="f-arquivo-info" style="color:#888;margin-top:4px;display:none;">
           Arquivo atual: <span id="f-arquivo-nome"></span>
           <button class="anexo-btn" onclick="removerArquivoContrato()" style="margin-left:8px;">Remover</button>
@@ -4540,6 +4540,15 @@ async function salvarContrato() {
     mostrarToast('Preencha todos os campos obrigatórios (*): Nº, Empresa, Objeto, Fornecedor, Início e Fim.', 'erro'); return;
   }
 
+  let arquivoB64 = null;
+  if (_arquivoContrato instanceof File) {
+    arquivoB64 = await fileToBase64(_arquivoContrato);
+  }
+
+  if (!window._editandoContrato && !arquivoB64) {
+    mostrarToast('É obrigatório anexar o documento do contrato (PDF/Imagem).', 'erro'); return;
+  }
+
   const temParcelas = document.getElementById('f-tem-parcelas').checked;
   let pgtoConfig = null;
   if (temParcelas) {
@@ -4552,11 +4561,6 @@ async function salvarContrato() {
   }
 
   const contratos = getContratos();
-  
-  let arquivoB64 = null;
-  if (_arquivoContrato instanceof File) {
-    arquivoB64 = await fileToBase64(_arquivoContrato);
-  }
 
   const empIds = getLoggedUserEmpresaIds();
   if (empIds && empresaId && !empIds.includes(empresaId)) {
