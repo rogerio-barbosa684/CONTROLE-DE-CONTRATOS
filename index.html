@@ -2501,7 +2501,7 @@ function saveDestinatarios(arr) {
   const t = db.transaction("destinatarios", "readwrite");
   t.objectStore("destinatarios").clear();
   arr.forEach(a => t.objectStore("destinatarios").put(a));
-  syncToServer();
+  syncToServer().catch(() => {});
 }
 
 function getSectors() { return cachedSectors; }
@@ -3870,18 +3870,21 @@ async function salvarCertidao() {
     });
   }
   saveCertidoes(certidoes);
-  syncToServer();
   renderCertidoes();
   fecharModal('modal-certidao');
-  mostrarToast('Certidão salva com sucesso!', 'sucesso');
+  syncToServer().then(() => {
+    mostrarToast('Certidão salva e sincronizada!', 'sucesso');
+  }).catch(() => {
+    mostrarToast('Certidão salva localmente.', 'info');
+  });
 }
 
 function excluirCertidao(id) {
   if (!confirm('Excluir esta certidão?')) return;
   const certidoes = getCertidoes().filter(c => c.id !== id);
   saveCertidoes(certidoes);
-  syncToServer();
   renderCertidoes();
+  syncToServer().catch(() => {});
   mostrarToast('Certidão excluída.', 'sucesso');
 }
 
@@ -4077,10 +4080,13 @@ async function salvarLicitacao() {
     });
   }
   saveLicitacoes(licitacoes);
-  syncToServer();
   renderLicitacoes();
   fecharModal('modal-licitacao');
-  mostrarToast('Licitação salva com sucesso!', 'sucesso');
+  syncToServer().then(() => {
+    mostrarToast('Licitação salva e sincronizada!', 'sucesso');
+  }).catch(() => {
+    mostrarToast('Licitação salva localmente.', 'info');
+  });
 }
 
 function excluirLicitacao(id) {
@@ -4090,8 +4096,8 @@ function excluirLicitacao(id) {
   if (!confirm('Excluir esta licitação?')) return;
   const licitacoes = getLicitacoes().filter(l => l.id !== id);
   saveLicitacoes(licitacoes);
-  syncToServer();
   renderLicitacoes();
+  syncToServer().catch(() => {});
   mostrarToast('Licitação excluída.', 'sucesso');
 }
 
@@ -4101,9 +4107,9 @@ function inativarLicitacao(id) {
   if (!l) return;
   l.status = (l.status === 'em_andamento') ? 'concluido' : 'em_andamento';
   saveLicitacoes(licitacoes);
-  syncToServer();
   renderLicitacoes();
   renderDashboard();
+  syncToServer().catch(() => {});
   mostrarToast(`Licitação ${l.status === 'em_andamento' ? 'reativada' : 'concluída'} com sucesso.`, 'sucesso');
 }
 
@@ -4197,7 +4203,7 @@ async function adicionarArquivoLicitacao() {
     if (idx !== -1) {
       licitacoes[idx].arquivos = _licitacaoArquivosTemp;
       saveLicitacoes(licitacoes);
-      syncToServer();
+      syncToServer().catch(() => {});
     }
   }
 }
@@ -4213,7 +4219,7 @@ function removerArquivoLicitacao(idx) {
     if (licIdx !== -1) {
       licitacoes[licIdx].arquivos = _licitacaoArquivosTemp;
       saveLicitacoes(licitacoes);
-      syncToServer();
+      syncToServer().catch(() => {});
     }
   }
 }
@@ -5016,9 +5022,9 @@ function excluirContrato(id) {
   fetch('/api/contracts/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
   saveContratos(getContratos().filter(c => c.id !== id));
   savePagamentos(getPagamentos().filter(p => p.contratoId !== id));
-  syncToServer();
   renderContratos();
   renderDashboard();
+  syncToServer().catch(() => {});
 }
 
 function inativarContrato(id) {
@@ -5030,9 +5036,9 @@ function inativarContrato(id) {
   getCsrfToken().then(() => {
     fetch('/api/contracts/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: c.active }) }).catch(() => {});
   });
-  syncToServer();
   renderContratos();
   renderDashboard();
+  syncToServer().catch(() => {});
   mostrarToast(`Contrato ${c.active ? 'ativado' : 'inativado'} com sucesso.`, 'sucesso');
 }
 
@@ -5137,9 +5143,13 @@ async function salvarAditivo() {
   _editandoAditivoId = null;
   _arquivoAditivo = null;
   saveContratos(contratos);
-  syncToServer();
   fecharModal('modal-aditivo');
   renderContratos();
+  syncToServer().then(() => {
+    mostrarToast('Aditivo salvo e sincronizado!', 'sucesso');
+  }).catch(() => {
+    mostrarToast('Aditivo salvo localmente.', 'info');
+  });
 }
 
 function recalcularContrato(contratos, idx) {
@@ -5163,8 +5173,8 @@ function excluirAditivo(contratoId, aditivoId) {
   contratos[idx].aditivos = (contratos[idx].aditivos || []).filter(a => a.id !== aditivoId);
   recalcularContrato(contratos, idx);
   saveContratos(contratos);
-  syncToServer();
   renderContratos();
+  syncToServer().catch(() => {});
   mostrarToast('Aditivo excluido e valores recalculados.', 'sucesso');
 }
 
@@ -5295,9 +5305,13 @@ function salvarPagamento() {
     status: dataPgto ? 'pago' : 'pendente'
   });
   savePagamentos(pagamentos);
-  syncToServer();
   fecharModal('modal-pagamento');
   renderPagamentos();
+  syncToServer().then(() => {
+    mostrarToast('Pagamento salvo e sincronizado!', 'sucesso');
+  }).catch(() => {
+    mostrarToast('Pagamento salvo localmente.', 'info');
+  });
 }
 
 function abrirBaixa(id) {
@@ -5335,19 +5349,23 @@ async function confirmarBaixa() {
   if(comprovanteB64) pagamentos[idx].comprovante = comprovanteB64;
 
   savePagamentos(pagamentos);
-  syncToServer();
   fecharModal('modal-baixar');
   renderPagamentos();
   renderDashboard();
+  syncToServer().then(() => {
+    mostrarToast('Baixa registrada e sincronizada!', 'sucesso');
+  }).catch(() => {
+    mostrarToast('Baixa registrada localmente.', 'info');
+  });
 }
 
 function excluirPgto(id) {
   if (!confirm('Excluir este pagamento?')) return;
   fetch('/api/payments/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
   savePagamentos(getPagamentos().filter(p=>p.id!==id));
-  syncToServer();
   renderPagamentos();
   renderDashboard();
+  syncToServer().catch(() => {});
 }
 
 function estornarBaixa(id) {
@@ -5365,9 +5383,9 @@ function estornarBaixa(id) {
   pagamentos[idx].status = 'pendente';
   pagamentos[idx].obs = (obsAtual ? obsAtual + ' | ' : '') + '[Estornado em ' + fmtData(hoje) + ']';
   savePagamentos(pagamentos);
-  syncToServer();
   renderPagamentos();
   renderDashboard();
+  syncToServer().catch(() => {});
 }
 
 // ===================== DASHBOARD =====================
@@ -6415,9 +6433,9 @@ function baixarSelecionados() {
     } else { erro++; }
   });
   savePagamentos(getPagamentos());
-  syncToServer();
   renderPagamentos();
   limparSelecao();
+  syncToServer().catch(() => {});
   mostrarToast(`${ok} pagamento(s) baixado(s).${erro ? ` ${erro} erro(s).` : ''}`, ok > 0 ? 'sucesso' : 'erro');
 }
 
@@ -6438,9 +6456,9 @@ function estornarSelecionados() {
     }
   });
   savePagamentos(getPagamentos());
-  syncToServer();
   renderPagamentos();
   limparSelecao();
+  syncToServer().catch(() => {});
   mostrarToast(`${ok} pagamento(s) estornado(s).`, 'sucesso');
 }
 
@@ -6454,9 +6472,9 @@ function excluirSelecionados() {
     if (idx >= 0) { getPagamentos().splice(idx, 1); ok++; }
   });
   savePagamentos(getPagamentos());
-  syncToServer();
   renderPagamentos();
   limparSelecao();
+  syncToServer().catch(() => {});
   mostrarToast(`${ok} pagamento(s) excluido(s).`, 'sucesso');
 }
 
