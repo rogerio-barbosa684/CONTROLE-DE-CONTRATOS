@@ -2445,6 +2445,7 @@ function loadDataFromDB() {
 
       showPage('dashboard', document.querySelector('nav button'));
       loadFromServer();
+      setTimeout(() => { syncToServer(); }, 2000);
     });
   });
 }
@@ -3184,18 +3185,23 @@ function savePagamentos(arr) {
 }
 
 function syncToServer() {
-  if (!db) return;
-  getCsrfToken().then(() => {
-    fetch('/api/sync', {
+  if (!db) return Promise.resolve();
+  return getCsrfToken().then(() => {
+    return fetch('/api/sync', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
       body:JSON.stringify({ contratos: cachedContratos || [], pagamentos: cachedPagamentos || [], destinatarios: cachedDestinatarios || [], certidoes: cachedCertidoes || [], licitacoes: cachedLicitacoes || [] })
     }).then(r => r.json()).then(resp => {
       if (resp && !resp.ok) {
         console.error('[SYNC] Erro do servidor:', resp.erro)
       }
+      return resp;
     }).catch(e => {
       console.error('[SYNC] Falha na conexao:', e)
+      return null;
     });
+  }).catch(e => {
+    console.error('[SYNC] Falha no CSRF:', e);
+    return null;
   });
 }
 
@@ -4669,8 +4675,16 @@ async function salvarContrato() {
   }
 
   saveContratos(contratos);
-  syncToServer();
-  mostrarToast('Contrato salvo com sucesso!', 'sucesso');
+  mostrarToast('Salvando no servidor...', 'info');
+  syncToServer().then(resp => {
+    if (resp && resp.ok) {
+      mostrarToast('Contrato salvo e sincronizado com sucesso!', 'sucesso');
+    } else {
+      mostrarToast('Contrato salvo localmente. Sincronização pendente.', 'info');
+    }
+  }).catch(() => {
+    mostrarToast('Contrato salvo localmente. Sync falhou, será retentado.', 'info');
+  });
   limparFormContrato();
   document.querySelectorAll('nav button')[1].click(); // Goto contratos
 }
@@ -6594,6 +6608,13 @@ if (resetToken) {
   checkLogin();
   if (sessionStorage.getItem('logged_in') === 'true') getCsrfToken();
 }
+
+// Sync periodico a cada 5 minutos como seguranca
+setInterval(() => {
+  if (db && sessionStorage.getItem('logged_in') === 'true') {
+    syncToServer().catch(() => {});
+  }
+}, 300000);
 </script>
 </body>
 </html>
