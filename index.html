@@ -854,6 +854,7 @@
   </svg>
   <h1>Controle de Contratos e Pagamentos</h1>
   <span id="header-user" style="margin-left:auto; color:#cde; font-size:0.85rem;"></span>
+  <span id="sync-indicator" style="margin-left:8px; font-size:0.75rem; color:#8f8; display:none;">● Sincronizado</span>
   <div id="notif-bell" style="position:relative;cursor:pointer;margin-left:12px;" onclick="toggleNotificacoes()" title="Notificações">
     <span style="font-size:1.3rem;">&#128276;</span>
     <span id="notif-badge" style="display:none;position:absolute;top:-6px;right:-8px;background:#e74c3c;color:#fff;border-radius:50%;min-width:18px;height:18px;font-size:0.7rem;font-weight:bold;text-align:center;line-height:18px;padding:0 4px;"></span>
@@ -2496,12 +2497,12 @@ function getLoggedUserEmpresaIds() {
 }
 
 function getDestinatarios() { return cachedDestinatarios; }
-function saveDestinatarios(arr) {
+function saveDestinatarios(arr, skipSync) {
   cachedDestinatarios = arr;
   const t = db.transaction("destinatarios", "readwrite");
   t.objectStore("destinatarios").clear();
   arr.forEach(a => t.objectStore("destinatarios").put(a));
-  syncToServer().catch(() => {});
+  if (!skipSync) syncToServer().catch(() => {});
 }
 
 function getSectors() { return cachedSectors; }
@@ -3249,7 +3250,7 @@ function mapServerAdditive(a) {
 }
 
 function loadFromServer() {
-  fetch('/api/sync').then(r => r.json()).then(data => {
+  return fetch('/api/sync').then(r => r.json()).then(data => {
     if (!data || !data.contratos) return;
     const aditivosPorContrato = {};
     (data.aditivos || []).forEach(a => {
@@ -3291,7 +3292,7 @@ function loadFromServer() {
         alertas: (typeof d.alertas === 'string' ? JSON.parse(d.alertas || '[]') : (d.alertas || [])),
         criadoEm: d.criado_em
       }));
-      cachedDestinatarios = serverDests; saveDestinatarios(serverDests);
+      cachedDestinatarios = serverDests; saveDestinatarios(serverDests, true);
     }
     if (data.sectors && data.sectors.length) {
       const serverSectors = data.sectors.map(s => ({
@@ -3353,7 +3354,9 @@ function loadFromServer() {
       merged.forEach(a => t.objectStore("user_setores").put(a));
     }
     setTimeout(checkNotificacoes, 500);
-  }).catch(() => {});
+  }).catch(e => {
+    console.error('[SYNC] loadFromServer falhou:', e);
+  });
 }
 
 function fileToBase64(file) {
@@ -6627,12 +6630,24 @@ if (resetToken) {
   if (sessionStorage.getItem('logged_in') === 'true') getCsrfToken();
 }
 
-// Sync periodico a cada 5 minutos como seguranca
-setInterval(() => {
-  if (db && sessionStorage.getItem('logged_in') === 'true') {
-    syncToServer().catch(() => {});
-  }
-}, 300000);
+// Sincronizacao em tempo real: busca do servidor a cada 30 segundos
+let _syncRunning = false;
+function syncRealtime() {
+  if (!db || sessionStorage.getItem('logged_in') !== 'true' || _syncRunning) return;
+  _syncRunning = true;
+  const indicator = document.getElementById('sync-indicator');
+  if (indicator) { indicator.style.display = 'inline'; indicator.style.color = '#ff0'; indicator.textContent = '● Sincronizando...'; }
+  loadFromServer().then(() => {
+    return syncToServer();
+  }).then(() => {
+    _syncRunning = false;
+    if (indicator) { indicator.style.color = '#8f8'; indicator.textContent = '● Sincronizado'; setTimeout(() => { indicator.style.display = 'none'; }, 3000); }
+  }).catch(() => {
+    _syncRunning = false;
+    if (indicator) { indicator.style.color = '#f66'; indicator.textContent = '● Falha sync'; }
+  });
+}
+setInterval(syncRealtime, 30000);
 </script>
 </body>
 </html>
