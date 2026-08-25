@@ -16,7 +16,8 @@
         "npm:jsonwebtoken@^9.0.2",
         "npm:nodemailer@^6.10.0",
         "npm:pg@^8.22.0",
-        "npm:sqlite3@^5.1.7"
+        "npm:sqlite3@^5.1.7",
+        "npm:ws@^8.21.3"
       ]
     }
   }

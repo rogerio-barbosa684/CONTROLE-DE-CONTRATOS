@@ -1077,6 +1077,36 @@
               <input type="number" id="f-valor-parcela" min="0" step="0.01" placeholder="0,00" readonly/>
             </div>
           </div>
+
+          <!-- PARCELAS MANUAIS (Avulso) -->
+          <div id="secao-parcelas-manuais" style="display:none; margin-top:16px; padding:16px; background:#fff; border-radius:8px; border:1.5px solid #e0e7ef;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <h4 style="margin:0; color:#1a3c5e;">Parcelas Manuais</h4>
+              <div id="saldo-contrato-info" style="font-size:0.9rem; color:#555;"></div>
+            </div>
+            <div id="lista-parcelas-manuais"></div>
+            <div class="form-grid" style="margin-top:12px; padding:12px; background:#f7f9fc; border-radius:6px;">
+              <div class="form-group">
+                <label>Descrição</label>
+                <input type="text" id="pm-desc" placeholder="Ex: Parcela 1, Sinal..."/>
+              </div>
+              <div class="form-group">
+                <label>Valor (R$)</label>
+                <input type="number" id="pm-valor" min="0" step="0.01" placeholder="0,00"/>
+              </div>
+              <div class="form-group">
+                <label>Vencimento</label>
+                <input type="date" id="pm-vencimento"/>
+              </div>
+              <div class="form-group" style="display:flex; align-items:flex-end;">
+                <button type="button" class="btn btn-success" onclick="adicionarParcelaManual()" style="width:100%;">+ Adicionar</button>
+              </div>
+            </div>
+            <div style="margin-top:8px; padding:10px; background:#e8f5e9; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+              <strong style="color:#2e7d32;">Saldo Restante:</strong>
+              <strong id="pm-saldo-restante" style="color:#2e7d32; font-size:1.1rem;">R$ 0,00</strong>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -4370,6 +4400,9 @@ function atualizarCamposParcela() {
     (forma === 'mensal' || forma === 'parcelado') ? '' : 'none';
   document.getElementById('grp-valor-parcela').style.display =
     (forma !== 'avulso') ? '' : 'none';
+  document.getElementById('secao-parcelas-manuais').style.display =
+    (forma === 'avulso') ? '' : 'none';
+  if (forma === 'avulso') atualizarSaldoParcelasManuais();
   calcularValorParcela();
 }
 
@@ -4391,6 +4424,75 @@ document.getElementById('f-forma-pgto').addEventListener('change', function() {
   calcularValorParcela();
 });
 
+// ===================== PARCELAS MANUAIS (AVULSO) =====================
+let _parcelasManuais = [];
+
+function adicionarParcelaManual() {
+  const desc = document.getElementById('pm-desc').value.trim();
+  const valor = parseFloat(document.getElementById('pm-valor').value) || 0;
+  const venc = document.getElementById('pm-vencimento').value;
+  if (!desc || !valor || !venc) {
+    mostrarToast('Preencha descrição, valor e vencimento da parcela.', 'erro'); return;
+  }
+  const total = parseFloat(document.getElementById('f-valor').value) || 0;
+  const somaAtual = _parcelasManuais.reduce((s, p) => s + p.valor, 0);
+  if (somaAtual + valor > total) {
+    mostrarToast('O valor das parcelas excede o valor total do contrato!', 'erro'); return;
+  }
+  _parcelasManuais.push({ desc, valor, venc });
+  _parcelasManuais.sort((a, b) => a.venc.localeCompare(b.venc));
+  renderParcelasManuais();
+  document.getElementById('pm-desc').value = '';
+  document.getElementById('pm-valor').value = '';
+  document.getElementById('pm-vencimento').value = '';
+
+  // Sugerir proxima parcela automaticamente com saldo restante
+  const novaSoma = _parcelasManuais.reduce((s, p) => s + p.valor, 0);
+  const saldo = total - novaSoma;
+  if (saldo > 0.01) {
+    const proxNum = _parcelasManuais.length + 1;
+    document.getElementById('pm-desc').value = `Parcela ${proxNum}`;
+    document.getElementById('pm-valor').value = saldo.toFixed(2);
+    // Sugerir 30 dias apos o ultimo vencimento
+    const ultimoVenc = _parcelasManuais[_parcelasManuais.length - 1].venc;
+    const d = new Date(ultimoVenc + 'T12:00:00');
+    d.setDate(d.getDate() + 30);
+    document.getElementById('pm-vencimento').value = d.toISOString().slice(0, 10);
+  }
+}
+
+function removerParcelaManual(idx) {
+  _parcelasManuais.splice(idx, 1);
+  renderParcelasManuais();
+}
+
+function renderParcelasManuais() {
+  const container = document.getElementById('lista-parcelas-manuais');
+  if (!_parcelasManuais.length) {
+    container.innerHTML = '<p style="text-align:center;color:#aaa;font-size:0.85rem;">Nenhuma parcela adicionada.</p>';
+  } else {
+    container.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;"><thead><tr style="background:#f0f4f8;"><th style="padding:6px;text-align:left;">Descrição</th><th style="padding:6px;text-align:right;">Valor</th><th style="padding:6px;text-align:left;">Vencimento</th><th style="padding:6px;width:40px;"></th></tr></thead><tbody>' +
+      _parcelasManuais.map((p, i) => `<tr style="border-bottom:1px solid #eee;"><td style="padding:6px;">${escapeHtml(p.desc)}</td><td style="padding:6px;text-align:right;">R$ ${fmtMoeda(p.valor)}</td><td style="padding:6px;">${fmtData(p.venc)}</td><td style="padding:6px;text-align:center;"><button type="button" onclick="removerParcelaManual(${i})" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:1rem;">&#10005;</button></td></tr>`).join('') +
+      '</tbody></table>';
+  }
+  atualizarSaldoParcelasManuais();
+}
+
+function atualizarSaldoParcelasManuais() {
+  const total = parseFloat(document.getElementById('f-valor').value) || 0;
+  const soma = _parcelasManuais.reduce((s, p) => s + p.valor, 0);
+  const saldo = total - soma;
+  const el = document.getElementById('pm-saldo-restante');
+  if (el) {
+    el.textContent = `R$ ${fmtMoeda(saldo)}`;
+    el.style.color = saldo < 0 ? '#c0392b' : '#2e7d32';
+  }
+  const infoEl = document.getElementById('saldo-contrato-info');
+  if (infoEl) {
+    infoEl.textContent = `Total: R$ ${fmtMoeda(total)} | Lançado: R$ ${fmtMoeda(soma)}`;
+  }
+}
+
 function limparFormContrato() {
   ['f-numero','f-objeto','f-parte','f-doc','f-valor','f-inicio',
    'f-fim','f-responsavel','f-setor','f-obs','f-qtd-parcelas',
@@ -4405,6 +4507,9 @@ function limparFormContrato() {
   document.getElementById('secao-parcelas').classList.add('section-hidden');
   document.getElementById('form-title').textContent = 'Novo Contrato';
   window._editandoContrato = null;
+  _parcelasManuais = [];
+  renderParcelasManuais();
+  document.getElementById('secao-parcelas-manuais').style.display = 'none';
   atualizarCamposParcela();
 }
 
@@ -4474,7 +4579,19 @@ async function salvarContrato() {
         p.contratoId !== window._editandoContrato
       );
 
-      if (temParcelas && pgtoConfig && pgtoConfig.forma !== 'avulso') {
+      if (temParcelas && pgtoConfig && pgtoConfig.forma === 'avulso') {
+        // Avulso com parcelas manuais: preserva pagas, insere novas parcelas manuais
+        const novasParcelasAvulso = _parcelasManuais.map(p => ({
+          id: uid(), contratoId: window._editandoContrato,
+          contratoNum: numero,
+          descricao: p.desc,
+          valor: p.valor,
+          vencimento: p.venc,
+          dataPagamento: null, valorPago: null, formaPgto: null,
+          obs: '', comprovante: null, status: 'pendente'
+        }));
+        savePagamentos(otherPayments.concat(paidPayments).concat(novasParcelasAvulso));
+      } else if (temParcelas && pgtoConfig && pgtoConfig.forma !== 'avulso') {
         const valorJaPago = paidPayments.reduce((s, p) => s + (p.valorPago || p.valor || 0), 0);
         const saldoRestante = valor - valorJaPago;
         const qtdNovaTotal = pgtoConfig.qtdParcelas;
@@ -4533,7 +4650,20 @@ async function salvarContrato() {
     };
     contratos.push(contrato);
 
-    if (temParcelas && pgtoConfig && pgtoConfig.forma !== 'avulso') {
+    if (temParcelas && pgtoConfig && pgtoConfig.forma === 'avulso') {
+      const pagamentos = getPagamentos();
+      for (const p of _parcelasManuais) {
+        pagamentos.push({
+          id: uid(), contratoId: contrato.id, contratoNum: contrato.numero,
+          descricao: p.desc,
+          valor: p.valor,
+          vencimento: p.venc,
+          dataPagamento: null, valorPago: null, formaPgto: null,
+          obs: '', comprovante: null, status: 'pendente'
+        });
+      }
+      savePagamentos(pagamentos);
+    } else if (temParcelas && pgtoConfig && pgtoConfig.forma !== 'avulso') {
       gerarParcelasAuto(contrato);
     }
   }
@@ -4739,7 +4869,21 @@ function abrirDetalhe(id) {
   }
 
   if (pagamentos.length) {
+    const valorContrato = c.valor || 0;
+    const somaParcelas = pagamentos.reduce((s, p) => s + (p.valor || 0), 0);
+    const valorPago = pagamentos.filter(p => p.dataPagamento).reduce((s, p) => s + (p.valorPago || p.valor || 0), 0);
+    const saldoContrato = valorContrato - somaParcelas;
     html += `<h4 style="margin:16px 0 8px;color:#1a3c5e;">Pagamentos</h4>`;
+    if (c.pgtoConfig && c.pgtoConfig.forma === 'avulso') {
+      html += `<div style="margin-bottom:12px;padding:10px;background:#f7f9fc;border-radius:6px;border:1px solid #e0e7ef;font-size:0.85rem;">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <span><strong>Total:</strong> R$ ${fmtMoeda(valorContrato)}</span>
+          <span><strong>Lançado:</strong> R$ ${fmtMoeda(somaParcelas)}</span>
+          <span><strong>Pago:</strong> R$ ${fmtMoeda(valorPago)}</span>
+          <span style="color:${saldoContrato < 0 ? '#c0392b' : '#2e7d32'}"><strong>Saldo:</strong> R$ ${fmtMoeda(saldoContrato)}</span>
+        </div>
+      </div>`;
+    }
     html += `<table><thead><tr><th>Descrição</th><th>Vencimento</th><th>Valor</th><th>Comprovante</th><th>Status</th></tr></thead><tbody>`;
     html += pagamentos.map(p => {
       const st = calcStatusPgto(p);
@@ -4843,6 +4987,13 @@ function editarContrato(id) {
     document.getElementById('f-dia-venc').value = c.pgtoConfig.diaVenc || '';
     document.getElementById('f-valor-parcela').value = c.pgtoConfig.valorParcela || '';
     atualizarCamposParcela();
+    if (c.pgtoConfig.forma === 'avulso') {
+      const pagamentosExistentes = getPagamentos().filter(p => p.contratoId === id && !p.dataPagamento);
+      _parcelasManuais = pagamentosExistentes.map(p => ({
+        desc: p.descricao, valor: p.valor, venc: p.vencimento
+      }));
+      renderParcelasManuais();
+    }
   }
 }
 
