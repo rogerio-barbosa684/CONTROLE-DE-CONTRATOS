@@ -1117,11 +1117,13 @@ export async function handler(event) {
           const numero = (c.numero || '').trim()
           if (!cid || !numero) { importados.ignorados++; continue }
           if (c.arquivo?.data?.length > MAX_BASE64) {
-            return json({ ok: false, erro: `Arquivo do contrato ${numero} excede 10MB.` }, 400)
+            console.warn(`[SYNC] Arquivo do contrato ${numero} excede 10MB, ignorando arquivo.`)
+            c.arquivo = null
           }
           const cnpjVal = (c.doc || '').trim()
           if (cnpjVal && !validarCpfCnpj(cnpjVal)) {
-            return json({ ok: false, erro: `CPF/CNPJ invalido no contrato ${numero}: ${cnpjVal}` }, 400)
+            console.warn(`[SYNC] CPF/CNPJ invalido no contrato ${numero}: ${cnpjVal}, ignorando CNPJ.`)
+            c.doc = ''
           }
           try {
             const pgto = c.pgtoConfig || {}
@@ -1151,7 +1153,8 @@ export async function handler(event) {
             await getSupabase().from('additives').delete().eq('contract_id', cid)
             for (const a of c.aditivos) {
               if (a.arquivo?.data?.length > MAX_BASE64) {
-                return json({ ok: false, erro: 'Arquivo de aditivo excede 10MB.' }, 400)
+                console.warn('[SYNC] Arquivo de aditivo excede 10MB, ignorando arquivo.')
+                a.arquivo = null
               }
               try {
                 const arqJson = a.arquivo ? JSON.stringify(a.arquivo) : null
@@ -1187,7 +1190,8 @@ export async function handler(event) {
           const vencimento = (p.vencimento || '').trim()
           if (!cid || !vencimento) { importados.ignorados++; continue }
           if (p.comprovante?.data?.length > MAX_BASE64) {
-            return json({ ok: false, erro: 'Comprovante de pagamento excede 10MB.' }, 400)
+            console.warn('[SYNC] Comprovante de pagamento excede 10MB, ignorando comprovante.')
+            p.comprovante = null
           }
           try {
             const valor = parseFloat(p.valor || 0)
