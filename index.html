@@ -2496,7 +2496,7 @@ function getLoggedUserEmpresaIds() {
   return ue.empresaIds;
 }
 
-function getDestinatarios() { return cachedDestinatarios; }
+function getDestinatarios() { return cachedDestinatarios.filter(d => !d.deleted_at); }
 function saveDestinatarios(arr, skipSync) {
   cachedDestinatarios = arr;
   const t = db.transaction("destinatarios", "readwrite");
@@ -2542,7 +2542,7 @@ function getLoggedUserSetorIds() {
 }
 
 // ===================== CERTIDOES =====================
-function getCertidoes() { return cachedCertidoes; }
+function getCertidoes() { return cachedCertidoes.filter(c => !c.deleted_at); }
 function saveCertidoes(arr) {
   cachedCertidoes = arr;
   const t = db.transaction("certidoes", "readwrite");
@@ -2551,7 +2551,7 @@ function saveCertidoes(arr) {
 }
 
 // ===================== LICITACOES =====================
-function getLicitacoes() { return cachedLicitacoes; }
+function getLicitacoes() { return cachedLicitacoes.filter(l => !l.deleted_at); }
 function saveLicitacoes(arr) {
   cachedLicitacoes = arr;
   const t = db.transaction("licitacoes", "readwrite");
@@ -3172,14 +3172,14 @@ function excluirDestinatario(id) {
   mostrarToast('Destinatario excluido.', 'sucesso');
 }
 
-function getContratos() { return cachedContratos; }
+function getContratos() { return cachedContratos.filter(c => !c.deleted_at); }
 function saveContratos(arr) {
   cachedContratos = arr;
   const t = db.transaction("contratos", "readwrite");
   t.objectStore("contratos").clear();
   arr.forEach(a => t.objectStore("contratos").put(a));
 }
-function getPagamentos() { return cachedPagamentos; }
+function getPagamentos() { return cachedPagamentos.filter(p => !p.deleted_at); }
 function savePagamentos(arr) {
   cachedPagamentos = arr;
   const t = db.transaction("pagamentos", "readwrite");
