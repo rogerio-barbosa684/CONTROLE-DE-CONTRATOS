@@ -4577,6 +4577,7 @@ async function salvarContrato() {
 
   const empIds = getLoggedUserEmpresaIds();
   if (empIds && empresaId && !empIds.includes(empresaId)) {
+    _saveSyncRunning = false;
     mostrarToast('Você não tem permissão para selecionar esta empresa.', 'erro'); return;
   }
 
@@ -4665,6 +4666,7 @@ async function salvarContrato() {
     window._editandoContrato = null;
   } else {
     if (contratos.find(c => c.numero === numero)) {
+      _saveSyncRunning = false;
       mostrarToast('Já existe um contrato com esse número.', 'erro'); return;
     }
     const contrato = {

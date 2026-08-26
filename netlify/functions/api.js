@@ -1179,9 +1179,9 @@ export async function handler(event) {
         }
 
         const pagDados = body.pagamentos || []
-        const contratosPag = new Set(pagDados.filter(p => p.contratoId).map(p => p.contratoId))
-        for (const cid of contratosPag) {
-          await getSupabase().from('payments').delete().eq('contract_id', cid)
+        const paymentIds = pagDados.filter(p => (p.id || '').trim()).map(p => (p.id || '').trim())
+        if (paymentIds.length) {
+          await getSupabase().from('payments').delete().in('id', paymentIds)
         }
         for (const p of pagDados) {
           const pid = (p.id || '').trim() || crypto.randomUUID()

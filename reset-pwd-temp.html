@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Redefinir Senha - Temporario</title>
+  <style>
+    body { font-family: Arial; max-width: 500px; margin: 50px auto; padding: 20px; }
+    input { width: 100%; padding: 10px; margin: 8px 0; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    button { padding: 12px 24px; background: #1a3c5e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; margin-top: 10px; }
+    button:hover { background: #145a8a; }
+    .msg { padding: 10px; margin-top: 10px; border-radius: 4px; }
+    .ok { background: #d4edda; color: #155724; }
+    .err { background: #f8d7da; color: #721c24; }
+  </style>
+</head>
+<body>
+  <h2>Redefinir Senha Admin</h2>
+  <p style="color:#666">Pagina temporaria para redefinir a senha do admin.</p>
+  <label>NOVA SENHA:</label>
+  <input type="password" id="nova-senha" placeholder="Minimo 8 caracteres, 1 maiuscula, 1 minuscula, 1 numero" />
+  <button onclick="resetar()">Redefinir Senha</button>
+  <div id="msg"></div>
+
+  <script>
+    const SUPABASE_URL = 'https://ljuvafbnvxxwuvyfapwm.supabase.co';
+    const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqdXZhZmJudnh4d3V2eWZhcHdtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NjkyMzk3OCwiZXhwIjoyMTAyNDk5OTc4fQ.wtyAQ1BSzmHQOyriXX2QmYZ0M_EWG-M6paMuiYUnbuY';
+
+    async function hashPassword(password) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(password);
+      const saltBytes = new Uint8Array(16);
+      crypto.getRandomValues(saltBytes);
+      const saltHex = Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+      const keyMaterial = await crypto.subtle.importKey('raw', data, { name: 'PBKDF2' }, false, ['deriveBits']);
+      const derivedBits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: encoder.encode(saltHex), iterations: 310000, hash: 'SHA-256' }, keyMaterial, 256);
+      const hashArray = Array.from(new Uint8Array(derivedBits));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      return 'pbkdf2_sha256$' + saltHex + '$' + hashHex;
+    }
+
+    async function resetar() {
+      const msg = document.getElementById('msg');
+      const senha = document.getElementById('nova-senha').value.trim();
+      if (!senha) { msg.className = 'msg err'; msg.textContent = 'Informe a nova senha.'; return; }
+      if (senha.length < 8) { msg.className = 'msg err'; msg.textContent = 'Minimo 8 caracteres.'; return; }
+      if (!/[A-Z]/.test(senha)) { msg.className = 'msg err'; msg.textContent = 'Minimo 1 letra maiuscula.'; return; }
+      if (!/[a-z]/.test(senha)) { msg.className = 'msg err'; msg.textContent = 'Minimo 1 letra minuscula.'; return; }
+      if (!/[0-9]/.test(senha)) { msg.className = 'msg err'; msg.textContent = 'Minimo 1 numero.'; return; }
+
+      try {
+        msg.className = 'msg ok'; msg.textContent = 'Processando...';
+        const hash = await hashPassword(senha);
+        const res = await fetch(SUPABASE_URL + '/rest/v1/users?username=eq.admin', {
+          method: 'PATCH',
+          headers: {
+            'apikey': SERVICE_KEY,
+            'Authorization': 'Bearer ' + SERVICE_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify({ password_hash: hash })
+        });
+        if (res.ok) {
+          msg.className = 'msg ok';
+          msg.innerHTML = '<b>Senha redefinida com sucesso!</b><br>Acesse o sistema e faca login com:<br><b>admin / ' + senha + '</b>';
+        } else {
+          const txt = await res.text();
+          msg.className = 'msg err';
+          msg.textContent = 'Erro: ' + txt;
+        }
+      } catch (e) {
+        msg.className = 'msg err';
+        msg.textContent = 'Erro: ' + e.message;
+      }
+    }
+  </script>
+</body>
+</html>
