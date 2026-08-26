@@ -435,6 +435,118 @@ function montarHtmlContratos(vencidos, grupos, tituloExtra = '') {
   return html
 }
 
+function processCertidoesVencidas(certidoes, hoje) {
+  const vencidas = []
+  const hj = new Date(hoje)
+  for (const ct of certidoes) {
+    const fv = (ct.data_validade || '').slice(0, 10)
+    const df = new Date(fv)
+    if (isNaN(df)) continue
+    const diff = Math.floor((hj - df) / 86400000)
+    if (diff <= 0) continue
+    vencidas.push({ id: ct.id, tipo: ct.tipo, empresa: ct.empresa_id || '', cnpj: ct.cnpj || '', validade: datefmt(fv), dias: diff })
+  }
+  return vencidas
+}
+
+function processCertidoesAVencer(certidoes, hoje) {
+  const grupos = { d35: [], d30: [], d15: [], d0_14: [] }
+  const hj = new Date(hoje)
+  for (const ct of certidoes) {
+    const fv = (ct.data_validade || '').slice(0, 10)
+    const df = new Date(fv)
+    if (isNaN(df)) continue
+    const diff = Math.floor((df - hj) / 86400000)
+    if (diff < 0) continue
+    const info = { id: ct.id, tipo: ct.tipo, empresa: ct.empresa_id || '', cnpj: ct.cnpj || '', validade: datefmt(fv), dias: diff }
+    if (diff >= 31 && diff <= 35) grupos.d35.push(info)
+    else if (diff >= 16 && diff <= 30) grupos.d30.push(info)
+    else if (diff === 15) grupos.d15.push(info)
+    else if (diff >= 0 && diff <= 14) grupos.d0_14.push(info)
+  }
+  return grupos
+}
+
+function montarHtmlCertidoes(vencidas, grupos, tituloExtra = '') {
+  let html = ''
+  if (vencidas.length) {
+    html += `<h2 style="color:#c0392b">Certidoes Vencidas${escapeHtml(tituloExtra)}</h2><table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:20px"><tr style="background:#ffe1e1"><th>Tipo</th><th>Empresa</th><th>CNPJ</th><th>Validade</th><th>Dias Vencida</th></tr>`
+    for (const c of vencidas) html += `<tr><td>${escapeHtml(c.tipo)}</td><td>${escapeHtml(c.empresa)}</td><td>${escapeHtml(c.cnpj)}</td><td>${escapeHtml(c.validade)}</td><td>${c.dias} dia(s)</td></tr>`
+    html += '</table>'
+  }
+  const secoes = [
+    ['d35', 'ENTRE 31 E 35 DIAS', '#24527a', '#eef6ff'],
+    ['d30', 'ENTRE 16 E 30 DIAS', '#d4820a', '#fff3cd'],
+    ['d15', 'FALTAM 15 DIAS', '#c0392b', '#ffe1e1'],
+    ['d0_14', 'MENOS DE 15 DIAS', '#b71c1c', '#ffd7d7'],
+  ]
+  for (const [chave, titulo, cor, bg] of secoes) {
+    const grupo = grupos[chave]
+    if (!grupo?.length) continue
+    if (html) html += `<h2 style="color:#1a3c5e">Aviso de Validade${escapeHtml(tituloExtra)}</h2>`
+    html += `<h3 style="color:${cor}">${titulo}</h3><table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:20px"><tr style="background:${bg}"><th>Tipo</th><th>Empresa</th><th>CNPJ</th><th>Validade</th><th>Dias</th></tr>`
+    for (const c of grupo) html += `<tr><td>${escapeHtml(c.tipo)}</td><td>${escapeHtml(c.empresa)}</td><td>${escapeHtml(c.cnpj)}</td><td>${escapeHtml(c.validade)}</td><td>${c.dias} dia(s)</td></tr>`
+    html += '</table>'
+  }
+  return html || `<p style="color:#2e7d52">Nenhuma certidao com alerta pendente.</p>`
+}
+
+function processLicitacoesVencidas(licitacoes, hoje) {
+  const vencidas = []
+  const hj = new Date(hoje)
+  for (const lc of licitacoes) {
+    const fv = (lc.data_fim || '').slice(0, 10)
+    const df = new Date(fv)
+    if (isNaN(df)) continue
+    const diff = Math.floor((hj - df) / 86400000)
+    if (diff <= 0) continue
+    vencidas.push({ id: lc.id, numero: lc.numero_licitacao || '', objeto: lc.objeto || '', empresa: lc.empresa_id || '', dataFim: datefmt(fv), dias: diff })
+  }
+  return vencidas
+}
+
+function processLicitacoesAVencer(licitacoes, hoje) {
+  const grupos = { d35: [], d30: [], d15: [], d0_14: [] }
+  const hj = new Date(hoje)
+  for (const lc of licitacoes) {
+    const fv = (lc.data_fim || '').slice(0, 10)
+    const df = new Date(fv)
+    if (isNaN(df)) continue
+    const diff = Math.floor((df - hj) / 86400000)
+    if (diff < 0) continue
+    const info = { id: lc.id, numero: lc.numero_licitacao || '', objeto: lc.objeto || '', empresa: lc.empresa_id || '', dataFim: datefmt(fv), dias: diff }
+    if (diff >= 31 && diff <= 35) grupos.d35.push(info)
+    else if (diff >= 16 && diff <= 30) grupos.d30.push(info)
+    else if (diff === 15) grupos.d15.push(info)
+    else if (diff >= 0 && diff <= 14) grupos.d0_14.push(info)
+  }
+  return grupos
+}
+
+function montarHtmlLicitacoes(vencidas, grupos, tituloExtra = '') {
+  let html = ''
+  if (vencidas.length) {
+    html += `<h2 style="color:#c0392b">Licitacoes Vencidas${escapeHtml(tituloExtra)}</h2><table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:20px"><tr style="background:#ffe1e1"><th>Numero</th><th>Objeto</th><th>Empresa</th><th>Data Fim</th><th>Dias</th></tr>`
+    for (const l of vencidas) html += `<tr><td>${escapeHtml(l.numero)}</td><td>${escapeHtml(l.objeto)}</td><td>${escapeHtml(l.empresa)}</td><td>${escapeHtml(l.dataFim)}</td><td>${l.dias} dia(s)</td></tr>`
+    html += '</table>'
+  }
+  const secoes = [
+    ['d35', 'ENTRE 31 E 35 DIAS', '#24527a', '#eef6ff'],
+    ['d30', 'ENTRE 16 E 30 DIAS', '#d4820a', '#fff3cd'],
+    ['d15', 'FALTAM 15 DIAS', '#c0392b', '#ffe1e1'],
+    ['d0_14', 'MENOS DE 15 DIAS', '#b71c1c', '#ffd7d7'],
+  ]
+  for (const [chave, titulo, cor, bg] of secoes) {
+    const grupo = grupos[chave]
+    if (!grupo?.length) continue
+    if (html) html += `<h2 style="color:#1a3c5e">Aviso de Vencimento${escapeHtml(tituloExtra)}</h2>`
+    html += `<h3 style="color:${cor}">${titulo}</h3><table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:20px"><tr style="background:${bg}"><th>Numero</th><th>Objeto</th><th>Empresa</th><th>Data Fim</th><th>Dias</th></tr>`
+    for (const l of grupo) html += `<tr><td>${escapeHtml(l.numero)}</td><td>${escapeHtml(l.objeto)}</td><td>${escapeHtml(l.empresa)}</td><td>${escapeHtml(l.dataFim)}</td><td>${l.dias} dia(s)</td></tr>`
+    html += '</table>'
+  }
+  return html || `<p style="color:#2e7d52">Nenhuma licitacao com alerta pendente.</p>`
+}
+
 async function enviarEmail(cfg, html, assunto, destinatario) {
   const port = parseInt(cfg.smtp_port) || 465
   const transporter = nodemailer.createTransport({
@@ -774,6 +886,90 @@ export async function handler(event) {
         }
       }
       if (!enviados && !erros.length) return json({ ok: true, msg: 'Nenhum contrato pendente para os destinatarios cadastrados.' })
+      return json({ ok: true, msg: `${enviados} e-mail(s) enviado(s).${erros.length ? ` Erros: ${erros.join('; ')}` : ''}` })
+    }
+
+    // ─── ENVIAR ALERTAS CERTIDOES ────────────────────────────────────────
+    if (route === 'enviar-alertas-certidoes') {
+      if (httpMethod !== 'POST') return json({ ok: false, erro: 'Metodo nao permitido' }, 405)
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const cfg = await getEmailConfig()
+      if (!cfg.email_remetente || !cfg.email_senha) {
+        return json({ ok: false, erro: 'Configure o e-mail primeiro.' })
+      }
+      const destinatariosData = body.destinatarios || []
+      if (!destinatariosData.length) {
+        return json({ ok: true, msg: 'Nenhum destinatario cadastrado para enviar alertas.' })
+      }
+      const { data: certidoes } = await getSupabase().from('certidoes').select('*')
+      const hj = today()
+
+      let enviados = 0, erros = []
+      for (const dest of destinatariosData) {
+        const email = (dest.email || '').trim()
+        if (!email) continue
+        const empresaIds = dest.empresaIds || []
+        const empIdsSet = empresaIds.length ? new Set(empresaIds) : null
+        const empCertidoes = (certidoes || []).filter(ct => !empIdsSet || empIdsSet.has(ct.empresa_id))
+        const vencidas = processCertidoesVencidas(empCertidoes, hj)
+        const grupos = processCertidoesAVencer(empCertidoes, hj)
+        if (!vencidas.length && !Object.values(grupos).some(g => g.length)) continue
+        const rotulo = dest.nome ? ` - ${dest.nome}` : ''
+        const htmlBody = `<html><body style="font-family:Arial,sans-serif;padding:20px">${montarHtmlCertidoes(vencidas, grupos, rotulo)}<p style="color:#666;font-size:12px">Gerado em ${new Date().toLocaleString('pt-BR')}</p></body></html>`
+        try {
+          await enviarEmail(cfg, htmlBody, `Alertas de Certidoes${rotulo} - ${hj}`, email)
+          enviados++
+        } catch (e) {
+          erros.push(`${email}: ${e.message}`)
+        }
+      }
+      if (!enviados && !erros.length) return json({ ok: true, msg: 'Nenhuma certidao pendente para os destinatarios cadastrados.' })
+      return json({ ok: true, msg: `${enviados} e-mail(s) enviado(s).${erros.length ? ` Erros: ${erros.join('; ')}` : ''}` })
+    }
+
+    // ─── ENVIAR ALERTAS LICITACOES ──────────────────────────────────────
+    if (route === 'enviar-alertas-licitacoes') {
+      if (httpMethod !== 'POST') return json({ ok: false, erro: 'Metodo nao permitido' }, 405)
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const cfg = await getEmailConfig()
+      if (!cfg.email_remetente || !cfg.email_senha) {
+        return json({ ok: false, erro: 'Configure o e-mail primeiro.' })
+      }
+      const destinatariosData = body.destinatarios || []
+      if (!destinatariosData.length) {
+        return json({ ok: true, msg: 'Nenhum destinatario cadastrado para enviar alertas.' })
+      }
+      const { data: licitacoes } = await getSupabase().from('licitacoes').select('*')
+      const hj = today()
+
+      let enviados = 0, erros = []
+      for (const dest of destinatariosData) {
+        const email = (dest.email || '').trim()
+        if (!email) continue
+        const empresaIds = dest.empresaIds || []
+        const empIdsSet = empresaIds.length ? new Set(empresaIds) : null
+        const empLicitacoes = (licitacoes || []).filter(lc => !empIdsSet || empIdsSet.has(lc.empresa_id))
+        const vencidas = processLicitacoesVencidas(empLicitacoes, hj)
+        const grupos = processLicitacoesAVencer(empLicitacoes, hj)
+        if (!vencidas.length && !Object.values(grupos).some(g => g.length)) continue
+        const rotulo = dest.nome ? ` - ${dest.nome}` : ''
+        const htmlBody = `<html><body style="font-family:Arial,sans-serif;padding:20px">${montarHtmlLicitacoes(vencidas, grupos, rotulo)}<p style="color:#666;font-size:12px">Gerado em ${new Date().toLocaleString('pt-BR')}</p></body></html>`
+        try {
+          await enviarEmail(cfg, htmlBody, `Alertas de Licitacoes${rotulo} - ${hj}`, email)
+          enviados++
+        } catch (e) {
+          erros.push(`${email}: ${e.message}`)
+        }
+      }
+      if (!enviados && !erros.length) return json({ ok: true, msg: 'Nenhuma licitacao pendente para os destinatarios cadastrados.' })
       return json({ ok: true, msg: `${enviados} e-mail(s) enviado(s).${erros.length ? ` Erros: ${erros.join('; ')}` : ''}` })
     }
 
