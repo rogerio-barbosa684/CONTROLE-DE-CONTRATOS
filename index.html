@@ -3187,12 +3187,12 @@ function savePagamentos(arr) {
 
 function syncToServer() {
   if (!db) return Promise.resolve();
+  const snapshot = { contratos: cachedContratos || [], pagamentos: cachedPagamentos || [], destinatarios: cachedDestinatarios || [], certidoes: cachedCertidoes || [], licitacoes: cachedLicitacoes || [] };
+  console.log('[SYNC-POST] Snapshot pagamentos:', snapshot.pagamentos.length, 'contratos:', snapshot.contratos.length);
   return getCsrfToken().then(() => {
-    const payload = { contratos: cachedContratos || [], pagamentos: cachedPagamentos || [], destinatarios: cachedDestinatarios || [], certidoes: cachedCertidoes || [], licitacoes: cachedLicitacoes || [] };
-    console.log('[SYNC-POST] Enviando pagamentos:', payload.pagamentos.length, 'Para contratos:', [...new Set(payload.pagamentos.map(p => p.contratoId))]);
     return fetch('/api/sync', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
-      body:JSON.stringify(payload)
+      body:JSON.stringify(snapshot)
     }).then(r => r.json()).then(resp => {
       if (resp && !resp.ok) {
         console.error('[SYNC] Erro do servidor:', resp.erro)
@@ -3270,8 +3270,12 @@ function loadFromServer() {
     const pagamentos = (data.pagamentos || []).map(mapServerPayment);
     console.log('[SYNC-GET] Pagamentos mapeados:', pagamentos.length, 'cachedPagamentos antigo:', cachedPagamentos?.length || 0);
     if (contratos.length || pagamentos.length || (data.empresas && data.empresas.length)) {
-      if (contratos.length) { cachedContratos = contratos; saveContratos(contratos); }
-      if (pagamentos.length) { cachedPagamentos = pagamentos; savePagamentos(pagamentos); }
+      if (_saveSyncRunning) {
+        console.log('[SYNC-GET] Pulando overwrite de contratos/pagamentos: save em andamento.');
+      } else {
+        if (contratos.length) { cachedContratos = contratos; saveContratos(contratos); }
+        if (pagamentos.length) { cachedPagamentos = pagamentos; savePagamentos(pagamentos); }
+      }
     }
     const activePage = document.querySelector('.page.active');
     if (activePage) {
@@ -4546,12 +4550,15 @@ async function salvarContrato() {
     mostrarToast('Preencha todos os campos obrigatórios (*): Nº, Empresa, Objeto, Fornecedor, Início e Fim.', 'erro'); return;
   }
 
+  _saveSyncRunning = true;
+
   let arquivoB64 = null;
   if (_arquivoContrato instanceof File) {
     arquivoB64 = await fileToBase64(_arquivoContrato);
   }
 
   if (!window._editandoContrato && !arquivoB64) {
+    _saveSyncRunning = false;
     mostrarToast('É obrigatório anexar o documento do contrato (PDF/Imagem).', 'erro'); return;
   }
 
@@ -4697,7 +4704,6 @@ async function salvarContrato() {
 
   saveContratos(contratos);
   mostrarToast('Salvando no servidor...', 'info');
-  _saveSyncRunning = true;
   syncToServer().then(resp => {
     _saveSyncRunning = false;
     if (resp && resp.ok) {
@@ -5311,6 +5317,8 @@ function salvarPagamento() {
   const venc  = document.getElementById('mp-vencimento').value;
   if (!contratoId || !venc) { mostrarToast('Informe o contrato e o vencimento.', 'erro'); return; }
 
+  _saveSyncRunning = true;
+
   const c = getContratos().find(x=>x.id===contratoId);
   const pagamentos = getPagamentos();
   const dataPgto = document.getElementById('mp-datapgto').value || null;
@@ -5327,7 +5335,6 @@ function salvarPagamento() {
   savePagamentos(pagamentos);
   fecharModal('modal-pagamento');
   renderPagamentos();
-  _saveSyncRunning = true;
   syncToServer().then(() => {
     _saveSyncRunning = false;
     mostrarToast('Pagamento salvo e sincronizado!', 'sucesso');
@@ -5356,6 +5363,8 @@ async function confirmarBaixa() {
   const valor = parseFloat(document.getElementById('bx-valor').value);
   if (!data) { mostrarToast('Informe a data do pagamento.', 'erro'); return; }
 
+  _saveSyncRunning = true;
+
   const arqInput = document.getElementById('bx-arquivo');
   let comprovanteB64 = null;
   if(arqInput.files.length > 0) {
@@ -5364,7 +5373,7 @@ async function confirmarBaixa() {
 
   const pagamentos = getPagamentos();
   const idx = pagamentos.findIndex(p=>p.id===_baixaId);
-  if (idx===-1) return;
+  if (idx===-1) { _saveSyncRunning = false; return; }
   pagamentos[idx].dataPagamento = data;
   pagamentos[idx].valorPago     = valor;
   pagamentos[idx].formaPgto     = document.getElementById('bx-forma').value;
@@ -5375,7 +5384,6 @@ async function confirmarBaixa() {
   fecharModal('modal-baixar');
   renderPagamentos();
   renderDashboard();
-  _saveSyncRunning = true;
   syncToServer().then(() => {
     _saveSyncRunning = false;
     mostrarToast('Baixa registrada e sincronizada!', 'sucesso');
@@ -5387,11 +5395,12 @@ async function confirmarBaixa() {
 
 function excluirPgto(id) {
   if (!confirm('Excluir este pagamento?')) return;
+  _saveSyncRunning = true;
   fetch('/api/payments/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
   savePagamentos(getPagamentos().filter(p=>p.id!==id));
   renderPagamentos();
   renderDashboard();
-  syncToServer().catch(() => {});
+  syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
 }
 
 function estornarBaixa(id) {
@@ -5411,7 +5420,8 @@ function estornarBaixa(id) {
   savePagamentos(pagamentos);
   renderPagamentos();
   renderDashboard();
-  syncToServer().catch(() => {});
+  _saveSyncRunning = true;
+  syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
 }
 
 // ===================== DASHBOARD =====================
