@@ -3188,12 +3188,16 @@ function savePagamentos(arr) {
 function syncToServer() {
   if (!db) return Promise.resolve();
   return getCsrfToken().then(() => {
+    const payload = { contratos: cachedContratos || [], pagamentos: cachedPagamentos || [], destinatarios: cachedDestinatarios || [], certidoes: cachedCertidoes || [], licitacoes: cachedLicitacoes || [] };
+    console.log('[SYNC-POST] Enviando pagamentos:', payload.pagamentos.length, 'Para contratos:', [...new Set(payload.pagamentos.map(p => p.contratoId))]);
     return fetch('/api/sync', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
-      body:JSON.stringify({ contratos: cachedContratos || [], pagamentos: cachedPagamentos || [], destinatarios: cachedDestinatarios || [], certidoes: cachedCertidoes || [], licitacoes: cachedLicitacoes || [] })
+      body:JSON.stringify(payload)
     }).then(r => r.json()).then(resp => {
       if (resp && !resp.ok) {
         console.error('[SYNC] Erro do servidor:', resp.erro)
+      } else if (resp) {
+        console.log('[SYNC-POST] Resposta:', resp.importados);
       }
       return resp;
     }).catch(e => {
@@ -3252,6 +3256,7 @@ function mapServerAdditive(a) {
 function loadFromServer() {
   return fetch('/api/sync').then(r => r.json()).then(data => {
     if (!data || !data.contratos) return;
+    console.log('[SYNC-GET] Recebidos:', data.contratos?.length || 0, 'contratos,', data.pagamentos?.length || 0, 'pagamentos');
     const aditivosPorContrato = {};
     (data.aditivos || []).forEach(a => {
       if (!aditivosPorContrato[a.contract_id]) aditivosPorContrato[a.contract_id] = [];
@@ -3263,6 +3268,7 @@ function loadFromServer() {
       return mc;
     });
     const pagamentos = (data.pagamentos || []).map(mapServerPayment);
+    console.log('[SYNC-GET] Pagamentos mapeados:', pagamentos.length, 'cachedPagamentos antigo:', cachedPagamentos?.length || 0);
     if (contratos.length || pagamentos.length || (data.empresas && data.empresas.length)) {
       if (contratos.length) { cachedContratos = contratos; saveContratos(contratos); }
       if (pagamentos.length) { cachedPagamentos = pagamentos; savePagamentos(pagamentos); }
@@ -4671,6 +4677,7 @@ async function salvarContrato() {
 
     if (temParcelas && pgtoConfig && pgtoConfig.forma === 'avulso') {
       const pagamentos = getPagamentos();
+      console.log('[AVULSO] _parcelasManuais:', JSON.parse(JSON.stringify(_parcelasManuais)));
       for (const p of _parcelasManuais) {
         pagamentos.push({
           id: uid(), contratoId: contrato.id, contratoNum: contrato.numero,
@@ -4681,6 +4688,7 @@ async function salvarContrato() {
           obs: '', comprovante: null, status: 'pendente'
         });
       }
+      console.log('[AVULSO] Total pagamentos a salvar:', pagamentos.length, 'Novas parcelas:', _parcelasManuais.length);
       savePagamentos(pagamentos);
     } else if (temParcelas && pgtoConfig && pgtoConfig.forma !== 'avulso') {
       gerarParcelasAuto(contrato);
@@ -4689,13 +4697,16 @@ async function salvarContrato() {
 
   saveContratos(contratos);
   mostrarToast('Salvando no servidor...', 'info');
+  _saveSyncRunning = true;
   syncToServer().then(resp => {
+    _saveSyncRunning = false;
     if (resp && resp.ok) {
       mostrarToast('Contrato salvo e sincronizado com sucesso!', 'sucesso');
     } else {
       mostrarToast('Contrato salvo localmente. Sincronização pendente.', 'info');
     }
   }).catch(() => {
+    _saveSyncRunning = false;
     mostrarToast('Contrato salvo localmente. Sync falhou, será retentado.', 'info');
   });
   limparFormContrato();
@@ -5031,7 +5042,8 @@ function excluirContrato(id) {
   savePagamentos(getPagamentos().filter(p => p.contratoId !== id));
   renderContratos();
   renderDashboard();
-  syncToServer().catch(() => {});
+  _saveSyncRunning = true;
+  syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
 }
 
 function inativarContrato(id) {
@@ -5045,7 +5057,8 @@ function inativarContrato(id) {
   });
   renderContratos();
   renderDashboard();
-  syncToServer().catch(() => {});
+  _saveSyncRunning = true;
+  syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
   mostrarToast(`Contrato ${c.active ? 'ativado' : 'inativado'} com sucesso.`, 'sucesso');
 }
 
@@ -5314,9 +5327,12 @@ function salvarPagamento() {
   savePagamentos(pagamentos);
   fecharModal('modal-pagamento');
   renderPagamentos();
+  _saveSyncRunning = true;
   syncToServer().then(() => {
+    _saveSyncRunning = false;
     mostrarToast('Pagamento salvo e sincronizado!', 'sucesso');
   }).catch(() => {
+    _saveSyncRunning = false;
     mostrarToast('Pagamento salvo localmente.', 'info');
   });
 }
@@ -5359,9 +5375,12 @@ async function confirmarBaixa() {
   fecharModal('modal-baixar');
   renderPagamentos();
   renderDashboard();
+  _saveSyncRunning = true;
   syncToServer().then(() => {
+    _saveSyncRunning = false;
     mostrarToast('Baixa registrada e sincronizada!', 'sucesso');
   }).catch(() => {
+    _saveSyncRunning = false;
     mostrarToast('Baixa registrada localmente.', 'info');
   });
 }
@@ -6636,18 +6655,24 @@ if (resetToken) {
 
 // Sincronizacao em tempo real: busca do servidor a cada 30 segundos
 let _syncRunning = false;
+let _saveSyncRunning = false;
 function syncRealtime() {
   if (!db || sessionStorage.getItem('logged_in') !== 'true' || _syncRunning) return;
+  if (_saveSyncRunning) { console.log('[SYNC-RT] Pulando: salvarContrato esta sincronizando'); return; }
   _syncRunning = true;
+  console.log('[SYNC-RT] Iniciando ciclo de sync...');
   const indicator = document.getElementById('sync-indicator');
   if (indicator) { indicator.style.display = 'inline'; indicator.style.color = '#ff0'; indicator.textContent = '● Sincronizando...'; }
   loadFromServer().then(() => {
+    if (_saveSyncRunning) { console.log('[SYNC-RT] Pulando POST: salvarContrato esta sincronizando'); return; }
     return syncToServer();
   }).then(() => {
     _syncRunning = false;
+    console.log('[SYNC-RT] Ciclo concluido');
     if (indicator) { indicator.style.color = '#8f8'; indicator.textContent = '● Sincronizado'; setTimeout(() => { indicator.style.display = 'none'; }, 3000); }
-  }).catch(() => {
+  }).catch((e) => {
     _syncRunning = false;
+    console.error('[SYNC-RT] Erro:', e);
     if (indicator) { indicator.style.color = '#f66'; indicator.textContent = '● Falha sync'; }
   });
 }
