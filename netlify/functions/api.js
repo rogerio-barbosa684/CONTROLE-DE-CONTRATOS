@@ -456,6 +456,7 @@ async function enviarEmail(cfg, html, assunto, destinatario) {
 export async function handler(event) {
   const { path, httpMethod, headers, body: rawBody } = event
   const body = rawBody ? JSON.parse(rawBody) : {}
+  const queryParams = event.queryStringParameters || {}
   const cookieHeader = headers.cookie || ''
   if (!body.csrf_token && headers['x-csrf-token']) body.csrf_token = headers['x-csrf-token']
   const host = headers.host || ''
@@ -1037,6 +1038,7 @@ export async function handler(event) {
       }
       const upd = {}
       if (body.active !== undefined) upd.active = body.active ? 1 : 0
+      upd.updated_at = new Date().toISOString()
       await getSupabase().from('contracts').update(upd).eq('id', parts[1])
       return json({ ok: true })
     }
@@ -1076,15 +1078,34 @@ export async function handler(event) {
       if (httpMethod === 'GET') {
         const authErr = requireAuth(user)
         if (authErr) return authErr
+        const since = queryParams.since || null
+        const sq = (tbl) => {
+          let q = getSupabase().from(tbl).select('*')
+          if (since) {
+            q = q.gt('updated_at', since)
+          } else {
+            q = q.is('deleted_at', null)
+          }
+          return q
+        }
+        const sqContracts = () => {
+          let q = getSupabase().from('contracts').select('*')
+          if (since) {
+            q = q.gt('updated_at', since)
+          } else {
+            q = q.eq('active', 1)
+          }
+          return q
+        }
         const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios, certidoes, licitacoes, sectors, userSetores] = await Promise.all([
-          getSupabase().from('contracts').select('*').order('created_at', { ascending: false }),
-          getSupabase().from('payments').select('*').order('vencimento'),
+          sqContracts().order('created_at', { ascending: false }),
+          sq('payments').order('vencimento'),
           getSupabase().from('users').select('id, username, full_name, role, created_at').order('id'),
-          getSupabase().from('additives').select('*').order('created_at'),
+          sq('additives').order('created_at'),
           getSupabase().from('companies').select('*').order('nome'),
-          getSupabase().from('destinatarios').select('*').order('criado_em'),
-          getSupabase().from('certidoes').select('*').order('criado_em', { ascending: false }),
-          getSupabase().from('licitacoes').select('*').order('criado_em', { ascending: false }),
+          sq('destinatarios').order('criado_em'),
+          sq('certidoes').order('criado_em', { ascending: false }),
+          sq('licitacoes').order('criado_em', { ascending: false }),
           getSupabase().from('sectors').select('*').order('nome'),
           getSupabase().from('user_setores').select('*'),
         ])
@@ -1098,7 +1119,8 @@ export async function handler(event) {
           certidoes: certidoes.data || [],
           licitacoes: licitacoes.data || [],
           sectors: sectors.data || [],
-          user_setores: userSetores.data || []
+          user_setores: userSetores.data || [],
+          server_now: new Date().toISOString()
         })
       }
 
@@ -1128,46 +1150,97 @@ export async function handler(event) {
           try {
             const pgto = c.pgtoConfig || {}
             const arquivoJson = c.arquivo ? JSON.stringify(c.arquivo) : null
-            const { data: existing } = await getSupabase().from('contracts').select('id').eq('id', cid).single()
-            const vals = {
-              numero, fornecedor: (c.parte || '').trim(), cnpj: (c.doc || '').trim(),
-              objeto: (c.objeto || '').trim(), valor_total: parseFloat(c.valor || 0),
-              inicio: (c.inicio || '').trim(), fim: (c.fim || '').trim(),
-              tem_parcelas: c.temParcelas ? 1 : 0, qtd_parcelas: pgto.qtdParcelas,
-              valor_parcela: safeFloat(pgto.valorParcela), dia_vencimento: pgto.diaVenc,
-              responsavel: (c.responsavel || '').trim(), setor: (c.setor || '').trim(),
-              obs: (c.obs || '').trim(), tipo: c.tipo, empresa_id: c.empresaId,
-              active: c.active !== undefined ? (c.active ? 1 : 0) : 1,
-              forma_pagamento: pgto.forma, arquivo_contrato: arquivoJson
-            }
+            const incomingUpdated = c.updated_at || c.createdAt || new Date().toISOString()
+            const incomingDeleted = c.deleted_at || null
+            const { data: existing } = await getSupabase().from('contracts').select('id, updated_at').eq('id', cid).single()
             if (existing) {
-              const { error } = await getSupabase().from('contracts').update({ ...vals, updated_at: new Date().toISOString() }).eq('id', cid)
-              if (error) { await audit(user.id, 'SYNC_ERROR', 'contracts', cid, `Update: ${error.message}`); importados.ignorados++; continue }
+              const existingUpdated = existing.updated_at || ''
+              if (incomingUpdated <= existingUpdated && !incomingDeleted) {
+                importados.contratos++
+                if (c.aditivos?.length) { for (const a of c.aditivos) importados.aditivos++ }
+                continue
+              }
+              if (incomingDeleted) {
+                await getSupabase().from('contracts').update({ active: 0, updated_at: incomingUpdated }).eq('id', cid)
+              } else {
+                const vals = {
+                  numero, fornecedor: (c.parte || '').trim(), cnpj: (c.doc || '').trim(),
+                  objeto: (c.objeto || '').trim(), valor_total: parseFloat(c.valor || 0),
+                  inicio: (c.inicio || '').trim(), fim: (c.fim || '').trim(),
+                  tem_parcelas: c.temParcelas ? 1 : 0, qtd_parcelas: pgto.qtdParcelas,
+                  valor_parcela: safeFloat(pgto.valorParcela), dia_vencimento: pgto.diaVenc,
+                  responsavel: (c.responsavel || '').trim(), setor: (c.setor || '').trim(),
+                  obs: (c.obs || '').trim(), tipo: c.tipo, empresa_id: c.empresaId,
+                  active: c.active !== undefined ? (c.active ? 1 : 0) : 1,
+                  forma_pagamento: pgto.forma, arquivo_contrato: arquivoJson,
+                  updated_at: incomingUpdated
+                }
+                const { error } = await getSupabase().from('contracts').update(vals).eq('id', cid)
+                if (error) { await audit(user.id, 'SYNC_ERROR', 'contracts', cid, `Update: ${error.message}`); importados.ignorados++; continue }
+              }
             } else {
-              const { error } = await getSupabase().from('contracts').insert({ id: cid, ...vals, created_by: user.id })
+              if (incomingDeleted) { importados.contratos++; continue }
+              const vals = {
+                numero, fornecedor: (c.parte || '').trim(), cnpj: (c.doc || '').trim(),
+                objeto: (c.objeto || '').trim(), valor_total: parseFloat(c.valor || 0),
+                inicio: (c.inicio || '').trim(), fim: (c.fim || '').trim(),
+                tem_parcelas: c.temParcelas ? 1 : 0, qtd_parcelas: pgto.qtdParcelas,
+                valor_parcela: safeFloat(pgto.valorParcela), dia_vencimento: pgto.diaVenc,
+                responsavel: (c.responsavel || '').trim(), setor: (c.setor || '').trim(),
+                obs: (c.obs || '').trim(), tipo: c.tipo, empresa_id: c.empresaId,
+                active: c.active !== undefined ? (c.active ? 1 : 0) : 1,
+                forma_pagamento: pgto.forma, arquivo_contrato: arquivoJson,
+                created_by: user.id, updated_at: incomingUpdated
+              }
+              const { error } = await getSupabase().from('contracts').insert({ id: cid, ...vals })
               if (error) { await audit(user.id, 'SYNC_ERROR', 'contracts', cid, `Insert: ${error.message}`); importados.ignorados++; continue }
             }
             importados.contratos++
 
           if (c.aditivos?.length) {
-            await getSupabase().from('additives').delete().eq('contract_id', cid)
             for (const a of c.aditivos) {
+              const aid = (a.id || '').trim()
+              if (!aid) { importados.ignorados++; continue }
               if (a.arquivo?.data?.length > MAX_BASE64) {
-                console.warn('[SYNC] Arquivo de aditivo excede 10MB, ignorando arquivo.')
+                console.warn('[SYNC] Arquivo de aditivo excede 15MB, ignorando arquivo.')
                 a.arquivo = null
               }
               try {
                 const arqJson = a.arquivo ? JSON.stringify(a.arquivo) : null
-                const { error } = await getSupabase().from('additives').insert({
-                  id: a.id || crypto.randomUUID(), contract_id: cid, numero: a.numero,
-                  data_aditivo: a.data || '', tipo: a.tipo, nova_data_fim: a.novaData,
-                  acrescimo_valor: a.novoValor, descricao: a.objeto || '',
-                  arquivo_contrato: arqJson, created_by: user.id
-                })
-                if (error) { await audit(user.id, 'SYNC_ERROR', 'additives', a.id, error.message); importados.ignorados++; continue }
+                const incomingUpdatedA = a.updated_at || a.createdAt || new Date().toISOString()
+                const incomingDeletedA = a.deleted_at || null
+                const { data: existingA } = await getSupabase().from('additives').select('id, updated_at').eq('id', aid).single()
+                if (existingA) {
+                  const existingUpdatedA = existingA.updated_at || ''
+                  if (incomingUpdatedA <= existingUpdatedA && !incomingDeletedA) {
+                    importados.aditivos++
+                    continue
+                  }
+                  if (incomingDeletedA) {
+                    await getSupabase().from('additives').delete().eq('id', aid)
+                  } else {
+                    const { error } = await getSupabase().from('additives').update({
+                      numero: a.numero, data_aditivo: a.data || '', tipo: a.tipo,
+                      nova_data_fim: a.novaData, acrescimo_valor: a.novoValor,
+                      descricao: a.objeto || '', arquivo_contrato: arqJson,
+                      updated_at: incomingUpdatedA
+                    }).eq('id', aid)
+                    if (error) { await audit(user.id, 'SYNC_ERROR', 'additives', aid, error.message); importados.ignorados++; continue }
+                  }
+                } else {
+                  if (incomingDeletedA) { importados.aditivos++; continue }
+                  const { error } = await getSupabase().from('additives').insert({
+                    id: aid, contract_id: cid, numero: a.numero,
+                    data_aditivo: a.data || '', tipo: a.tipo, nova_data_fim: a.novaData,
+                    acrescimo_valor: a.novoValor, descricao: a.objeto || '',
+                    arquivo_contrato: arqJson, created_by: user.id,
+                    updated_at: incomingUpdatedA
+                  })
+                  if (error) { await audit(user.id, 'SYNC_ERROR', 'additives', aid, error.message); importados.ignorados++; continue }
+                }
                 importados.aditivos++
               } catch (e) {
-                await audit(user.id, 'SYNC_ERROR', 'additives', a.id, e.message)
+                await audit(user.id, 'SYNC_ERROR', 'additives', aid, e.message)
                 importados.ignorados++
               }
             }
@@ -1179,10 +1252,6 @@ export async function handler(event) {
         }
 
         const pagDados = body.pagamentos || []
-        const paymentIds = pagDados.filter(p => (p.id || '').trim()).map(p => (p.id || '').trim())
-        if (paymentIds.length) {
-          await getSupabase().from('payments').delete().in('id', paymentIds)
-        }
         for (const p of pagDados) {
           const pid = (p.id || '').trim() || crypto.randomUUID()
           const cid = (p.contratoId || '').trim()
@@ -1190,22 +1259,49 @@ export async function handler(event) {
           const vencimento = (p.vencimento || '').trim()
           if (!cid || !vencimento) { importados.ignorados++; continue }
           if (p.comprovante?.data?.length > MAX_BASE64) {
-            console.warn('[SYNC] Comprovante de pagamento excede 10MB, ignorando comprovante.')
+            console.warn('[SYNC] Comprovante de pagamento excede 15MB, ignorando comprovante.')
             p.comprovante = null
           }
           try {
             const valor = parseFloat(p.valor || 0)
             const dataPag = (p.dataPagamento || '').trim() || null
             const comprovanteJson = p.comprovante ? JSON.stringify(p.comprovante) : null
-            const { error } = await getSupabase().from('payments').insert({
-              id: pid, contract_id: cid, descricao, vencimento, valor,
-              contrato_num: (p.contratoNum || '').trim() || null,
-              data_pagamento: dataPag, valor_pago: safeFloat(p.valorPago) || (dataPag ? valor : null),
-              forma_pagamento: (p.formaPgto || '').trim() || null,
-              status: dataPag ? 'pago' : 'pendente', obs: (p.obs || '').trim(),
-              comprovante: comprovanteJson, created_by: user.id
-            })
-            if (error) { await audit(user.id, 'SYNC_ERROR', 'payments', pid, error.message); importados.ignorados++; continue }
+            const incomingUpdated = p.updated_at || p.createdAt || new Date().toISOString()
+            const incomingDeleted = p.deleted_at || null
+            const { data: existing } = await getSupabase().from('payments').select('id, updated_at, deleted_at').eq('id', pid).single()
+            if (existing) {
+              const existingUpdated = existing.updated_at || ''
+              if (incomingUpdated <= existingUpdated && !incomingDeleted) {
+                importados.pagamentos++
+                continue
+              }
+              if (incomingDeleted) {
+                await getSupabase().from('payments').delete().eq('id', pid)
+              } else {
+                const vals = {
+                  contract_id: cid, descricao, vencimento, valor,
+                  contrato_num: (p.contratoNum || '').trim() || null,
+                  data_pagamento: dataPag, valor_pago: safeFloat(p.valorPago) || (dataPag ? valor : null),
+                  forma_pagamento: (p.formaPgto || '').trim() || null,
+                  status: dataPag ? 'pago' : 'pendente', obs: (p.obs || '').trim(),
+                  comprovante: comprovanteJson, updated_at: incomingUpdated
+                }
+                const { error } = await getSupabase().from('payments').update(vals).eq('id', pid)
+                if (error) { await audit(user.id, 'SYNC_ERROR', 'payments', pid, error.message); importados.ignorados++; continue }
+              }
+            } else {
+              if (incomingDeleted) { importados.pagamentos++; continue }
+              const { error } = await getSupabase().from('payments').insert({
+                id: pid, contract_id: cid, descricao, vencimento, valor,
+                contrato_num: (p.contratoNum || '').trim() || null,
+                data_pagamento: dataPag, valor_pago: safeFloat(p.valorPago) || (dataPag ? valor : null),
+                forma_pagamento: (p.formaPgto || '').trim() || null,
+                status: dataPag ? 'pago' : 'pendente', obs: (p.obs || '').trim(),
+                comprovante: comprovanteJson, created_by: user.id,
+                updated_at: incomingUpdated
+              })
+              if (error) { await audit(user.id, 'SYNC_ERROR', 'payments', pid, error.message); importados.ignorados++; continue }
+            }
             importados.pagamentos++
           } catch (e) {
             await audit(user.id, 'SYNC_ERROR', 'payments', pid, e.message)
@@ -1218,17 +1314,35 @@ export async function handler(event) {
           const email = (d.email || '').trim()
           if (!did || !email) { importados.ignorados++; continue }
           try {
-            const { data: existing } = await getSupabase().from('destinatarios').select('id').eq('id', did).single()
+            const incomingUpdatedD = d.updated_at || d.criadoEm || new Date().toISOString()
+            const incomingDeletedD = d.deleted_at || null
+            const { data: existing } = await getSupabase().from('destinatarios').select('id, updated_at').eq('id', did).single()
             if (existing) {
-              const { error } = await getSupabase().from('destinatarios').update({
-                email, nome: (d.nome || '').trim(),
-                empresa_ids: JSON.stringify(d.empresaIds || [])
-              }).eq('id', did)
-              if (error) { await audit(user.id, 'SYNC_ERROR', 'destinatarios', did, error.message); importados.ignorados++; continue }
+              const existingUpdatedD = existing.updated_at || ''
+              if (incomingUpdatedD <= existingUpdatedD && !incomingDeletedD) {
+                importados.destinatarios = (importados.destinatarios || 0) + 1
+                continue
+              }
+              if (incomingDeletedD) {
+                await getSupabase().from('destinatarios').delete().eq('id', did)
+              } else {
+                const { error } = await getSupabase().from('destinatarios').update({
+                  email, nome: (d.nome || '').trim(),
+                  empresa_ids: JSON.stringify(d.empresaIds || []),
+                  setores: JSON.stringify(d.setores || []),
+                  alertas: JSON.stringify(d.alertas || []),
+                  updated_at: incomingUpdatedD
+                }).eq('id', did)
+                if (error) { await audit(user.id, 'SYNC_ERROR', 'destinatarios', did, error.message); importados.ignorados++; continue }
+              }
             } else {
+              if (incomingDeletedD) { importados.destinatarios = (importados.destinatarios || 0) + 1; continue }
               const { error } = await getSupabase().from('destinatarios').insert({
                 id: did, email, nome: (d.nome || '').trim(),
-                empresa_ids: JSON.stringify(d.empresaIds || [])
+                empresa_ids: JSON.stringify(d.empresaIds || []),
+                setores: JSON.stringify(d.setores || []),
+                alertas: JSON.stringify(d.alertas || []),
+                updated_at: incomingUpdatedD
               })
               if (error) { await audit(user.id, 'SYNC_ERROR', 'destinatarios', did, error.message); importados.ignorados++; continue }
             }
@@ -1253,7 +1367,9 @@ export async function handler(event) {
                 arquivoNomeStr = ct.arquivo.name || ''
               }
             }
-            const { data: existing } = await getSupabase().from('certidoes').select('id').eq('id', ctid).single()
+            const incomingUpdatedCt = ct.updated_at || ct.criadoEm || new Date().toISOString()
+            const incomingDeletedCt = ct.deleted_at || null
+            const { data: existing } = await getSupabase().from('certidoes').select('id, updated_at').eq('id', ctid).single()
             const vals = {
               empresa_id: ct.empresaId || '',
               cnpj: (ct.cnpj || '').trim(),
@@ -1263,12 +1379,23 @@ export async function handler(event) {
               data_validade: ct.dataValidade || '', status: ct.status || 'pendente',
               arquivo_nome: arquivoNomeStr,
               arquivo_dados: arquivoDadosStr,
-              observacoes: (ct.obs || '').trim()
+              observacoes: (ct.obs || '').trim(),
+              updated_at: incomingUpdatedCt
             }
             if (existing) {
-              const { error } = await getSupabase().from('certidoes').update(vals).eq('id', ctid)
-              if (error) { await audit(user.id, 'SYNC_ERROR', 'certidoes', ctid, `Update: ${error.message}`); importados.ignorados++; continue }
+              const existingUpdatedCt = existing.updated_at || ''
+              if (incomingUpdatedCt <= existingUpdatedCt && !incomingDeletedCt) {
+                importados.certidoes = (importados.certidoes || 0) + 1
+                continue
+              }
+              if (incomingDeletedCt) {
+                await getSupabase().from('certidoes').delete().eq('id', ctid)
+              } else {
+                const { error } = await getSupabase().from('certidoes').update(vals).eq('id', ctid)
+                if (error) { await audit(user.id, 'SYNC_ERROR', 'certidoes', ctid, `Update: ${error.message}`); importados.ignorados++; continue }
+              }
             } else {
+              if (incomingDeletedCt) { importados.certidoes = (importados.certidoes || 0) + 1; continue }
               const { error } = await getSupabase().from('certidoes').insert({ id: ctid, ...vals })
               if (error) { await audit(user.id, 'SYNC_ERROR', 'certidoes', ctid, `Insert: ${error.message}`); importados.ignorados++; continue }
             }
@@ -1284,7 +1411,9 @@ export async function handler(event) {
           const numero = (lc.numeroLicitacao || '').trim()
           if (!lcid || !numero) { importados.ignorados++; continue }
           try {
-            const { data: existing } = await getSupabase().from('licitacoes').select('id').eq('id', lcid).single()
+            const incomingUpdatedLc = lc.updated_at || lc.criadoEm || new Date().toISOString()
+            const incomingDeletedLc = lc.deleted_at || null
+            const { data: existing } = await getSupabase().from('licitacoes').select('id, updated_at').eq('id', lcid).single()
             const arquivos = []
             if (lc.arquivoEdital) arquivos.push({ ...lc.arquivoEdital, tipo: 'edital' })
             if (lc.arquivoContrato) arquivos.push({ ...lc.arquivoContrato, tipo: 'contrato' })
@@ -1296,12 +1425,23 @@ export async function handler(event) {
               data_inicio: lc.dataInicio || '', data_fim: lc.dataFim || '',
               status: lc.status || 'em_andamento',
               arquivos: JSON.stringify(arquivos),
-              observacoes: (lc.obs || '').trim()
+              observacoes: (lc.obs || '').trim(),
+              updated_at: incomingUpdatedLc
             }
             if (existing) {
-              const { error } = await getSupabase().from('licitacoes').update(vals).eq('id', lcid)
-              if (error) { await audit(user.id, 'SYNC_ERROR', 'licitacoes', lcid, error.message); importados.ignorados++; continue }
+              const existingUpdatedLc = existing.updated_at || ''
+              if (incomingUpdatedLc <= existingUpdatedLc && !incomingDeletedLc) {
+                importados.licitacoes = (importados.licitacoes || 0) + 1
+                continue
+              }
+              if (incomingDeletedLc) {
+                await getSupabase().from('licitacoes').delete().eq('id', lcid)
+              } else {
+                const { error } = await getSupabase().from('licitacoes').update(vals).eq('id', lcid)
+                if (error) { await audit(user.id, 'SYNC_ERROR', 'licitacoes', lcid, error.message); importados.ignorados++; continue }
+              }
             } else {
+              if (incomingDeletedLc) { importados.licitacoes = (importados.licitacoes || 0) + 1; continue }
               const { error } = await getSupabase().from('licitacoes').insert({ id: lcid, ...vals })
               if (error) { await audit(user.id, 'SYNC_ERROR', 'licitacoes', lcid, error.message); importados.ignorados++; continue }
             }

@@ -77,7 +77,9 @@ CREATE TABLE IF NOT EXISTS payments (
   comprovante TEXT,
   created_by INTEGER,
   paid_by INTEGER,
-  created_at TEXT NOT NULL DEFAULT (now()::text)
+  created_at TEXT NOT NULL DEFAULT (now()::text),
+  updated_at TEXT,
+  deleted_at TEXT
 );
 
 -- Additives
@@ -93,7 +95,9 @@ CREATE TABLE IF NOT EXISTS additives (
   arquivo_contrato TEXT,
   resumo TEXT,
   created_by INTEGER,
-  created_at TEXT NOT NULL DEFAULT (now()::text)
+  created_at TEXT NOT NULL DEFAULT (now()::text),
+  updated_at TEXT,
+  deleted_at TEXT
 );
 
 -- Audit Log
@@ -115,7 +119,9 @@ CREATE TABLE IF NOT EXISTS destinatarios (
   empresa_ids TEXT DEFAULT '[]',
   setores TEXT DEFAULT '[]',
   alertas TEXT DEFAULT '["contratos","pagamentos","certidoes","licitacoes"]',
-  criado_em TEXT NOT NULL DEFAULT (now()::text)
+  criado_em TEXT NOT NULL DEFAULT (now()::text),
+  updated_at TEXT,
+  deleted_at TEXT
 );
 
 -- Email Config
@@ -157,7 +163,9 @@ CREATE TABLE IF NOT EXISTS certidoes (
   arquivo_nome TEXT DEFAULT '',
   arquivo_dados TEXT DEFAULT '',
   observacoes TEXT DEFAULT '',
-  criado_em TEXT NOT NULL DEFAULT (now()::text)
+  criado_em TEXT NOT NULL DEFAULT (now()::text),
+  updated_at TEXT,
+  deleted_at TEXT
 );
 
 -- Licitacoes
@@ -178,7 +186,9 @@ CREATE TABLE IF NOT EXISTS licitacoes (
   arquivos TEXT DEFAULT '[]',
   resumo TEXT,
   observacoes TEXT DEFAULT '',
-  criado_em TEXT NOT NULL DEFAULT (now()::text)
+  criado_em TEXT NOT NULL DEFAULT (now()::text),
+  updated_at TEXT,
+  deleted_at TEXT
 );
 
 -- User-Empresas (vinculo usuario-empresa)
@@ -187,3 +197,16 @@ CREATE TABLE IF NOT EXISTS user_empresas (
   empresa_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   PRIMARY KEY (user_id, empresa_id)
 );
+
+-- Sync Log (rastreia todas as mutacoes para resolucao de conflitos)
+CREATE TABLE IF NOT EXISTS sync_log (
+  id SERIAL PRIMARY KEY,
+  entity TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  machine_id TEXT DEFAULT '',
+  data_hash TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (now()::text)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_log_entity ON sync_log(entity, entity_id);
+CREATE INDEX IF NOT EXISTS idx_sync_log_created ON sync_log(created_at);

@@ -3151,9 +3151,9 @@ function salvarDestinatario() {
   if (!alertas.length) { mostrarToast('Selecione ao menos um tipo de alerta.', 'erro'); return; }
   if (_editandoDestId) {
     const idx = dests.findIndex(d => d.id === _editandoDestId);
-    if (idx !== -1) { dests[idx].email = email; dests[idx].nome = nome; dests[idx].empresaIds = empresaIds; dests[idx].setores = setores; dests[idx].alertas = alertas; }
+    if (idx !== -1) { dests[idx].email = email; dests[idx].nome = nome; dests[idx].empresaIds = empresaIds; dests[idx].setores = setores; dests[idx].alertas = alertas; dests[idx].updated_at = now(); }
   } else {
-    dests.push({ id: uid(), email, nome, empresaIds, setores, alertas, criadoEm: new Date().toISOString() });
+    dests.push({ id: uid(), email, nome, empresaIds, setores, alertas, criadoEm: now(), updated_at: now() });
   }
   saveDestinatarios(dests);
   limparFormDestinatario();
@@ -3163,7 +3163,9 @@ function salvarDestinatario() {
 
 function excluirDestinatario(id) {
   if (!confirm('Excluir este destinatario?')) return;
-  const dests = getDestinatarios().filter(d => d.id !== id);
+  const dests = getDestinatarios();
+  const idx = dests.findIndex(d => d.id === id);
+  if (idx !== -1) { dests[idx].deleted_at = now(); dests[idx].updated_at = now(); }
   saveDestinatarios(dests);
   limparFormDestinatario();
   renderDestinatariosConfig();
@@ -3187,7 +3189,7 @@ function savePagamentos(arr) {
 
 function syncToServer() {
   if (!db) return Promise.resolve();
-  const snapshot = { contratos: cachedContratos || [], pagamentos: cachedPagamentos || [], destinatarios: cachedDestinatarios || [], certidoes: cachedCertidoes || [], licitacoes: cachedLicitacoes || [] };
+  const snapshot = { contratos: cachedContratos || [], pagamentos: cachedPagamentos || [], destinatarios: cachedDestinatarios || [], certidoes: cachedCertidoes || [], licitacoes: cachedLicitacoes || [], last_sync_at: _lastSyncAt };
   console.log('[SYNC-POST] Snapshot pagamentos:', snapshot.pagamentos.length, 'contratos:', snapshot.contratos.length);
   return getCsrfToken().then(() => {
     return fetch('/api/sync', {
@@ -3213,6 +3215,7 @@ function syncToServer() {
 function mapServerContract(c) {
   let arquivo = null;
   if (c.arquivo_contrato) { try { arquivo = JSON.parse(c.arquivo_contrato); } catch(e) {} }
+  const isDeleted = c.active === 0;
   return {
     id: c.id, numero: c.numero, parte: c.fornecedor, doc: c.cnpj,
     objeto: c.objeto, valor: c.valor_total,
@@ -3227,7 +3230,8 @@ function mapServerContract(c) {
     empresaId: c.empresa_id || null,     arquivo: arquivo,
     aditivos: [], criadoEm: c.created_at,
     active: c.active !== undefined ? c.active : 1,
-    resumo: c.resumo || null
+    resumo: c.resumo || null,
+    updated_at: c.updated_at || null, deleted_at: isDeleted ? (c.updated_at || now()) : null
   };
 }
 function mapServerPayment(p) {
@@ -3239,7 +3243,8 @@ function mapServerPayment(p) {
     descricao: p.descricao, valor: p.valor, vencimento: p.vencimento,
     dataPagamento: p.data_pagamento, valorPago: p.valor_pago,
     formaPgto: p.forma_pagamento, status: p.status || 'pendente',
-    obs: p.obs || '', comprovante: comprovante
+    obs: p.obs || '', comprovante: comprovante,
+    updated_at: p.updated_at || null, deleted_at: p.deleted_at || null
   };
 }
 function mapServerAdditive(a) {
@@ -3249,34 +3254,98 @@ function mapServerAdditive(a) {
     id: a.id, numero: a.numero, data: a.data_aditivo, tipo: a.tipo,
     novaData: a.nova_data_fim, novoValor: a.acrescimo_valor,
     objeto: a.descricao, criadoEm: a.created_at, arquivo: arquivo,
-    resumo: a.resumo || null
+    resumo: a.resumo || null,
+    updated_at: a.updated_at || null, deleted_at: a.deleted_at || null
   };
 }
 
+function mergeDelta(cached, delta, entity) {
+  if (!delta || !delta.length) return cached;
+  const map = new Map((cached || []).map(r => [r.id, r]));
+  for (const srv of delta) {
+    const local = map.get(srv.id);
+    if (srv.deleted_at) { map.delete(srv.id); continue; }
+    if (local) {
+      const localUpdated = local.updated_at || '';
+      const srvUpdated = srv.updated_at || '';
+      if (srvUpdated > localUpdated) map.set(srv.id, srv);
+    } else {
+      map.set(srv.id, srv);
+    }
+  }
+  return Array.from(map.values());
+}
+
 function loadFromServer() {
-  return fetch('/api/sync').then(r => r.json()).then(data => {
+  const since = _lastSyncAt ? '?since=' + encodeURIComponent(_lastSyncAt) : '';
+  return fetch('/api/sync' + since).then(r => r.json()).then(data => {
     if (!data || !data.contratos) return;
-    console.log('[SYNC-GET] Recebidos:', data.contratos?.length || 0, 'contratos,', data.pagamentos?.length || 0, 'pagamentos');
+    const isDelta = !!_lastSyncAt;
+    console.log('[SYNC-GET] Recebidos:', data.contratos?.length || 0, 'contratos,', data.pagamentos?.length || 0, 'pagamentos', isDelta ? '(delta)' : '(full)');
     const aditivosPorContrato = {};
     (data.aditivos || []).forEach(a => {
       if (!aditivosPorContrato[a.contract_id]) aditivosPorContrato[a.contract_id] = [];
       aditivosPorContrato[a.contract_id].push(mapServerAdditive(a));
     });
-    const contratos = (data.contratos || []).map(c => {
+    const contratos = (data.contratos || []).filter(c => !c.deleted_at).map(c => {
       const mc = mapServerContract(c);
-      mc.aditivos = aditivosPorContrato[c.id] || [];
+      mc.aditivos = (aditivosPorContrato[c.id] || []).filter(a => !a.deleted_at);
       return mc;
     });
-    const pagamentos = (data.pagamentos || []).map(mapServerPayment);
-    console.log('[SYNC-GET] Pagamentos mapeados:', pagamentos.length, 'cachedPagamentos antigo:', cachedPagamentos?.length || 0);
-    if (contratos.length || pagamentos.length || (data.empresas && data.empresas.length)) {
-      if (_saveSyncRunning) {
-        console.log('[SYNC-GET] Pulando overwrite de contratos/pagamentos: save em andamento.');
+    const pagamentos = (data.pagamentos || []).filter(p => !p.deleted_at).map(mapServerPayment);
+    const destinatarios = (data.destinatarios || []).filter(d => !d.deleted_at).map(d => ({
+      id: d.id, email: d.email, nome: d.nome || '',
+      empresaIds: (typeof d.empresa_ids === 'string' ? JSON.parse(d.empresa_ids || '[]') : (d.empresa_ids || [])),
+      setores: (typeof d.setores === 'string' ? JSON.parse(d.setores || '[]') : (d.setores || [])),
+      alertas: (typeof d.alertas === 'string' ? JSON.parse(d.alertas || '[]') : (d.alertas || [])),
+      criadoEm: d.criado_em, updated_at: d.updated_at || null, deleted_at: d.deleted_at || null
+    }));
+    const certidoes = (data.certidoes || []).filter(ct => !ct.deleted_at).map(ct => {
+      let arquivo = null;
+      if (ct.arquivo_dados) { try { arquivo = JSON.parse(ct.arquivo_dados); } catch(e) {} }
+      if (!arquivo && ct.arquivo_nome) arquivo = { name: ct.arquivo_nome, data: '' };
+      return {
+        id: ct.id, empresaId: ct.empresa_id, cnpj: ct.cnpj || '', uf: ct.uf || '', cidade: ct.cidade || '',
+        tipo: ct.tipo, dataEmissao: ct.data_emissao, dataValidade: ct.data_validade,
+        status: ct.status, arquivo: arquivo,
+        obs: ct.observacoes || '', criadoEm: ct.criado_em,
+        updated_at: ct.updated_at || null, deleted_at: ct.deleted_at || null
+      };
+    });
+    const licitacoes = (data.licitacoes || []).filter(lc => !lc.deleted_at).map(lc => {
+      let arquivos = [];
+      if (lc.arquivos) { try { arquivos = typeof lc.arquivos === 'string' ? JSON.parse(lc.arquivos) : lc.arquivos; } catch(e) {} }
+      return {
+        id: lc.id, numeroLicitacao: lc.numero_licitacao, edital: lc.edital,
+        nomeLicitacao: lc.nome_licitacao || '', cnpj: lc.cnpj || '',
+        objeto: lc.objeto, empresaId: lc.empresa_id, contratoId: lc.contrato_id,
+        valor: lc.valor, dataHomologacao: lc.data_homologacao,
+        dataInicio: lc.data_inicio, dataFim: lc.data_fim,
+        status: lc.status, arquivos: arquivos,
+        obs: lc.observacoes || '', criadoEm: lc.criado_em,
+        updated_at: lc.updated_at || null, deleted_at: lc.deleted_at || null
+      };
+    });
+    if (_saveSyncRunning) {
+      console.log('[SYNC-GET] Pulando merge: save em andamento.');
+    } else {
+      if (isDelta) {
+        cachedContratos = mergeDelta(cachedContratos, contratos, 'contratos');
+        cachedPagamentos = mergeDelta(cachedPagamentos, pagamentos, 'pagamentos');
+        cachedDestinatarios = mergeDelta(cachedDestinatarios, destinatarios, 'destinatarios');
+        cachedCertidoes = mergeDelta(cachedCertidoes, certidoes, 'certidoes');
+        cachedLicitacoes = mergeDelta(cachedLicitacoes, licitacoes, 'licitacoes');
       } else {
-        if (contratos.length) { cachedContratos = contratos; saveContratos(contratos); }
-        if (pagamentos.length) { cachedPagamentos = pagamentos; savePagamentos(pagamentos); }
+        if (contratos.length) { cachedContratos = contratos; }
+        if (pagamentos.length) { cachedPagamentos = pagamentos; }
+        if (destinatarios.length) { cachedDestinatarios = destinatarios; }
+        if (certidoes.length) { cachedCertidoes = certidoes; }
+        if (licitacoes.length) { cachedLicitacoes = licitacoes; }
       }
+      saveContratos(cachedContratos); savePagamentos(cachedPagamentos);
+      saveDestinatarios(cachedDestinatarios, true); saveCertidoes(cachedCertidoes); saveLicitacoes(cachedLicitacoes);
     }
+    _lastSyncAt = data.server_now || now();
     const activePage = document.querySelector('.page.active');
     if (activePage) {
       const id = activePage.id.replace('page-', '');
@@ -3286,72 +3355,19 @@ function loadFromServer() {
     }
     if (data.empresas) {
       const serverEmpresas = data.empresas.map(e => ({
-        id: e.id,
-        nome: e.nome,
-        cnpj: e.cnpj || '',
-        criadoEm: e.criado_em,
-        active: e.active !== undefined ? e.active : 1
+        id: e.id, nome: e.nome, cnpj: e.cnpj || '',
+        criadoEm: e.criado_em, active: e.active !== undefined ? e.active : 1
       }));
       cachedEmpresas = serverEmpresas; saveEmpresas(serverEmpresas);
-    }
-    if (data.destinatarios && data.destinatarios.length) {
-      const serverDests = data.destinatarios.map(d => ({
-        id: d.id, email: d.email, nome: d.nome || '',
-        empresaIds: (typeof d.empresa_ids === 'string' ? JSON.parse(d.empresa_ids || '[]') : (d.empresa_ids || [])),
-        setores: (typeof d.setores === 'string' ? JSON.parse(d.setores || '[]') : (d.setores || [])),
-        alertas: (typeof d.alertas === 'string' ? JSON.parse(d.alertas || '[]') : (d.alertas || [])),
-        criadoEm: d.criado_em
-      }));
-      cachedDestinatarios = serverDests; saveDestinatarios(serverDests, true);
     }
     if (data.sectors && data.sectors.length) {
       const serverSectors = data.sectors.map(s => ({
         id: s.id, nome: s.nome,
-        active: s.active !== undefined ? s.active : 1,
-        criadoEm: s.criado_em
+        active: s.active !== undefined ? s.active : 1, criadoEm: s.criado_em
       }));
       cachedSectors = serverSectors; saveSectors(serverSectors);
     }
-    if (data.certidoes && data.certidoes.length) {
-      const serverCerts = data.certidoes.map(ct => {
-        let arquivo = null;
-        if (ct.arquivo_dados) {
-          try { arquivo = JSON.parse(ct.arquivo_dados); } catch(e) {}
-        }
-        if (!arquivo && ct.arquivo_nome) {
-          arquivo = { name: ct.arquivo_nome, data: '' };
-        }
-        return {
-          id: ct.id, empresaId: ct.empresa_id, cnpj: ct.cnpj || '', uf: ct.uf || '', cidade: ct.cidade || '',
-          tipo: ct.tipo, dataEmissao: ct.data_emissao, dataValidade: ct.data_validade,
-          status: ct.status, arquivo: arquivo,
-          obs: ct.observacoes || '', criadoEm: ct.criado_em
-        };
-      });
-      cachedCertidoes = serverCerts; saveCertidoes(serverCerts);
-    }
-    if (data.licitacoes && data.licitacoes.length) {
-      const serverLics = data.licitacoes.map(lc => {
-        let arquivos = [];
-        if (lc.arquivos) {
-          try { arquivos = typeof lc.arquivos === 'string' ? JSON.parse(lc.arquivos) : lc.arquivos; } catch(e) {}
-        }
-        return {
-          id: lc.id, numeroLicitacao: lc.numero_licitacao, edital: lc.edital,
-          nomeLicitacao: lc.nome_licitacao || '', cnpj: lc.cnpj || '',
-          objeto: lc.objeto, empresaId: lc.empresa_id, contratoId: lc.contrato_id,
-          valor: lc.valor, dataHomologacao: lc.data_homologacao,
-          dataInicio: lc.data_inicio, dataFim: lc.data_fim,
-          status: lc.status, arquivos: arquivos,
-          obs: lc.observacoes || '', criadoEm: lc.criado_em
-        };
-      });
-      cachedLicitacoes = serverLics; saveLicitacoes(serverLics);
-    }
     if (data.user_setores && data.user_setores.length) {
-      const serverUserSetores = data.user_setores.map(us => ({
-        userId: us.user_id, setorIds: []
-      }));
       const grouped = {};
       data.user_setores.forEach(us => {
         if (!grouped[us.user_id]) grouped[us.user_id] = [];
@@ -3874,12 +3890,13 @@ async function salvarCertidao() {
       certidoes[idx].dataValidade = dataValidade;
       certidoes[idx].status = status;
       certidoes[idx].obs = obs;
+      certidoes[idx].updated_at = now();
       if (arquivo) certidoes[idx].arquivo = arquivo;
     }
   } else {
     certidoes.push({
       id: uid(), empresaId, cnpj, uf, cidade, tipo, dataEmissao, dataValidade,
-      status, arquivo, obs, criadoEm: new Date().toISOString()
+      status, arquivo, obs, criadoEm: now(), updated_at: now()
     });
   }
   saveCertidoes(certidoes);
@@ -3894,7 +3911,9 @@ async function salvarCertidao() {
 
 function excluirCertidao(id) {
   if (!confirm('Excluir esta certidão?')) return;
-  const certidoes = getCertidoes().filter(c => c.id !== id);
+  const certidoes = getCertidoes();
+  const idx = certidoes.findIndex(c => c.id === id);
+  if (idx !== -1) { certidoes[idx].deleted_at = now(); certidoes[idx].updated_at = now(); }
   saveCertidoes(certidoes);
   renderCertidoes();
   syncToServer().catch(() => {});
@@ -4083,13 +4102,14 @@ async function salvarLicitacao() {
       licitacoes[idx].status = status;
       licitacoes[idx].obs = obs;
       licitacoes[idx].resumo = licitacoes[idx].resumo || null;
+      licitacoes[idx].updated_at = now();
     }
   } else {
     licitacoes.push({
       id: uid(), numeroLicitacao: numero, nomeLicitacao, cnpj, edital, objeto,
       empresaId, contratoId, valor, dataHomologacao,
       dataInicio, dataFim, status, arquivos: [], resumo: null,
-      obs, criadoEm: new Date().toISOString()
+      obs, criadoEm: now(), updated_at: now()
     });
   }
   saveLicitacoes(licitacoes);
@@ -4107,7 +4127,9 @@ function excluirLicitacao(id) {
     mostrarToast('Apenas o administrador pode excluir licitações.', 'erro'); return;
   }
   if (!confirm('Excluir esta licitação?')) return;
-  const licitacoes = getLicitacoes().filter(l => l.id !== id);
+  const licitacoes = getLicitacoes();
+  const idx = licitacoes.findIndex(l => l.id === id);
+  if (idx !== -1) { licitacoes[idx].deleted_at = now(); licitacoes[idx].updated_at = now(); }
   saveLicitacoes(licitacoes);
   renderLicitacoes();
   syncToServer().catch(() => {});
@@ -4119,6 +4141,7 @@ function inativarLicitacao(id) {
   const l = licitacoes.find(x => x.id === id);
   if (!l) return;
   l.status = (l.status === 'em_andamento') ? 'concluido' : 'em_andamento';
+  l.updated_at = now();
   saveLicitacoes(licitacoes);
   renderLicitacoes();
   renderDashboard();
@@ -4600,7 +4623,8 @@ async function salvarContrato() {
         setor: document.getElementById('f-setor').value,
         obs: document.getElementById('f-obs').value,
         temParcelas, pgtoConfig, arquivo: arquivoB64,
-        aditivos: contratos[idx].aditivos || []
+        aditivos: contratos[idx].aditivos || [],
+        updated_at: now()
       };
 
       // Regerar parcelas na edicao: preserva pagas, remove nao pagas, cria novas
@@ -4621,7 +4645,8 @@ async function salvarContrato() {
           valor: p.valor,
           vencimento: p.venc,
           dataPagamento: null, valorPago: null, formaPgto: null,
-          obs: '', comprovante: null, status: 'pendente'
+          obs: '', comprovante: null, status: 'pendente',
+          updated_at: now()
         }));
         savePagamentos(otherPayments.concat(paidPayments).concat(novasParcelasAvulso));
       } else if (temParcelas && pgtoConfig && pgtoConfig.forma !== 'avulso') {
@@ -4653,7 +4678,8 @@ async function salvarContrato() {
               valor: Math.round(valorParcela * 100) / 100,
               vencimento: d.toISOString().slice(0, 10),
               dataPagamento: null, valorPago: null, formaPgto: null,
-              obs: '', comprovante: null, status: 'pendente'
+              obs: '', comprovante: null, status: 'pendente',
+              updated_at: now()
             });
           }
         }
@@ -4680,7 +4706,7 @@ async function salvarContrato() {
       temParcelas, pgtoConfig, arquivo: arquivoB64,
       aditivos: [],
       active: 1,
-      criadoEm: new Date().toISOString()
+      criadoEm: now(), updated_at: now()
     };
     contratos.push(contrato);
 
@@ -4694,7 +4720,8 @@ async function salvarContrato() {
           valor: p.valor,
           vencimento: p.venc,
           dataPagamento: null, valorPago: null, formaPgto: null,
-          obs: '', comprovante: null, status: 'pendente'
+          obs: '', comprovante: null, status: 'pendente',
+          updated_at: now()
         });
       }
       console.log('[AVULSO] Total pagamentos a salvar:', pagamentos.length, 'Novas parcelas:', _parcelasManuais.length);
@@ -4733,7 +4760,7 @@ function gerarParcelasAuto(contrato) {
       valor: cfg.valorParcela || contrato.valor,
       vencimento: contrato.fim,
       dataPagamento: null, formaPgto: null, obs: '',
-      status: 'pendente'
+      status: 'pendente', updated_at: now()
     });
   } else if (cfg.forma === 'mensal' || cfg.forma === 'parcelado') {
     const qtd = cfg.qtdParcelas || calcularMeses(contrato.inicio, contrato.fim);
@@ -4748,7 +4775,7 @@ function gerarParcelasAuto(contrato) {
         valor: Math.round(valorP * 100) / 100,
         vencimento: d.toISOString().slice(0,10),
         dataPagamento: null, formaPgto: null, obs: '',
-        status: 'pendente'
+        status: 'pendente', updated_at: now()
       });
     }
   }
@@ -5045,9 +5072,14 @@ function editarContrato(id) {
 
 function excluirContrato(id) {
   if (!confirm('Excluir este contrato e todos os seus pagamentos?')) return;
-  fetch('/api/contracts/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
-  saveContratos(getContratos().filter(c => c.id !== id));
-  savePagamentos(getPagamentos().filter(p => p.contratoId !== id));
+  const ts = now();
+  const contratos = getContratos();
+  const idx = contratos.findIndex(c => c.id === id);
+  if (idx !== -1) { contratos[idx].deleted_at = ts; contratos[idx].updated_at = ts; }
+  saveContratos(contratos);
+  const pagamentos = getPagamentos();
+  pagamentos.filter(p => p.contratoId === id).forEach(p => { p.deleted_at = ts; p.updated_at = ts; });
+  savePagamentos(pagamentos);
   renderContratos();
   renderDashboard();
   _saveSyncRunning = true;
@@ -5059,10 +5091,8 @@ function inativarContrato(id) {
   const c = contratos.find(x => x.id === id);
   if (!c) return;
   c.active = c.active === 0 ? 1 : 0;
+  c.updated_at = now();
   saveContratos(contratos);
-  getCsrfToken().then(() => {
-    fetch('/api/contracts/' + id, { method:'PUT', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()), body:JSON.stringify({ active: c.active }) }).catch(() => {});
-  });
   renderContratos();
   renderDashboard();
   _saveSyncRunning = true;
@@ -5148,8 +5178,10 @@ async function salvarAditivo() {
     Object.assign(a, {
       numero: document.getElementById('ad-numero').value || a.numero,
       data: document.getElementById('ad-data').value,
-      tipo: tipoLabel, objeto, novaData: novaData||null, novoValor, arquivo
+      tipo: tipoLabel, objeto, novaData: novaData||null, novoValor, arquivo,
+      updated_at: now()
     });
+    contratos[idx].updated_at = now();
     recalcularContrato(contratos, idx);
     mostrarToast('Aditivo editado com sucesso!', 'sucesso');
   } else {
@@ -5159,10 +5191,11 @@ async function salvarAditivo() {
       numero: document.getElementById('ad-numero').value || `${(contratos[idx].aditivos?.length||0)+1}º Aditivo`,
       data:   document.getElementById('ad-data').value,
       tipo:   tipoLabel, objeto, novaData: novaData||null, novoValor,
-      criadoEm: new Date().toISOString(), arquivo
+      criadoEm: now(), arquivo, updated_at: now()
     };
     if (!contratos[idx].aditivos) contratos[idx].aditivos = [];
     contratos[idx].aditivos.push(aditivo);
+    contratos[idx].updated_at = now();
 
     if (novaData && (tipo==='prazo'||tipo==='prazo_valor')) contratos[idx].fim = novaData;
     if (novoValor && (tipo==='valor'||tipo==='prazo_valor')) contratos[idx].valor += novoValor;
@@ -5332,7 +5365,8 @@ function salvarPagamento() {
     dataPagamento: dataPgto,
     formaPgto: document.getElementById('mp-forma').value,
     obs: document.getElementById('mp-obs').value,
-    status: dataPgto ? 'pago' : 'pendente'
+    status: dataPgto ? 'pago' : 'pendente',
+    updated_at: now()
   });
   savePagamentos(pagamentos);
   fecharModal('modal-pagamento');
@@ -5380,6 +5414,7 @@ async function confirmarBaixa() {
   pagamentos[idx].valorPago     = valor;
   pagamentos[idx].formaPgto     = document.getElementById('bx-forma').value;
   pagamentos[idx].obs           = document.getElementById('bx-obs').value;
+  pagamentos[idx].updated_at    = now();
   if(comprovanteB64) pagamentos[idx].comprovante = comprovanteB64;
 
   savePagamentos(pagamentos);
@@ -5398,8 +5433,13 @@ async function confirmarBaixa() {
 function excluirPgto(id) {
   if (!confirm('Excluir este pagamento?')) return;
   _saveSyncRunning = true;
-  fetch('/api/payments/' + id, { method:'DELETE', headers:csrfHeaders() }).catch(() => {});
-  savePagamentos(getPagamentos().filter(p=>p.id!==id));
+  const pagamentos = getPagamentos();
+  const idx = pagamentos.findIndex(p => p.id === id);
+  if (idx !== -1) {
+    pagamentos[idx].deleted_at = now();
+    pagamentos[idx].updated_at = now();
+  }
+  savePagamentos(pagamentos);
   renderPagamentos();
   renderDashboard();
   syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
@@ -5418,6 +5458,7 @@ function estornarBaixa(id) {
   pagamentos[idx].formaPgto = null;
   pagamentos[idx].comprovante = null;
   pagamentos[idx].status = 'pendente';
+  pagamentos[idx].updated_at = now();
   pagamentos[idx].obs = (obsAtual ? obsAtual + ' | ' : '') + '[Estornado em ' + fmtData(hoje) + ']';
   savePagamentos(pagamentos);
   renderPagamentos();
@@ -6668,6 +6709,8 @@ if (resetToken) {
 // Sincronizacao em tempo real: busca do servidor a cada 30 segundos
 let _syncRunning = false;
 let _saveSyncRunning = false;
+let _lastSyncAt = null;
+function now() { return new Date().toISOString(); }
 function syncRealtime() {
   if (!db || sessionStorage.getItem('logged_in') !== 'true' || _syncRunning) return;
   if (_saveSyncRunning) { console.log('[SYNC-RT] Pulando: salvarContrato esta sincronizando'); return; }
