@@ -3329,19 +3329,11 @@ function loadFromServer() {
     if (_saveSyncRunning) {
       console.log('[SYNC-GET] Pulando merge: save em andamento.');
     } else {
-      if (isDelta) {
-        cachedContratos = mergeDelta(cachedContratos, contratos, 'contratos');
-        cachedPagamentos = mergeDelta(cachedPagamentos, pagamentos, 'pagamentos');
-        cachedDestinatarios = mergeDelta(cachedDestinatarios, destinatarios, 'destinatarios');
-        cachedCertidoes = mergeDelta(cachedCertidoes, certidoes, 'certidoes');
-        cachedLicitacoes = mergeDelta(cachedLicitacoes, licitacoes, 'licitacoes');
-      } else {
-        if (contratos.length) { cachedContratos = contratos; }
-        if (pagamentos.length) { cachedPagamentos = pagamentos; }
-        if (destinatarios.length) { cachedDestinatarios = destinatarios; }
-        if (certidoes.length) { cachedCertidoes = certidoes; }
-        if (licitacoes.length) { cachedLicitacoes = licitacoes; }
-      }
+      cachedContratos = mergeDelta(cachedContratos, contratos, 'contratos');
+      cachedPagamentos = mergeDelta(cachedPagamentos, pagamentos, 'pagamentos');
+      cachedDestinatarios = mergeDelta(cachedDestinatarios, destinatarios, 'destinatarios');
+      cachedCertidoes = mergeDelta(cachedCertidoes, certidoes, 'certidoes');
+      cachedLicitacoes = mergeDelta(cachedLicitacoes, licitacoes, 'licitacoes');
       saveContratos(cachedContratos); savePagamentos(cachedPagamentos);
       saveDestinatarios(cachedDestinatarios, true); saveCertidoes(cachedCertidoes); saveLicitacoes(cachedLicitacoes);
     }
