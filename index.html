@@ -3338,6 +3338,7 @@ function loadFromServer() {
       saveDestinatarios(cachedDestinatarios, true); saveCertidoes(cachedCertidoes); saveLicitacoes(cachedLicitacoes);
     }
     _lastSyncAt = data.server_now || now();
+    saveLastSyncAt();
     const activePage = document.querySelector('.page.active');
     if (activePage) {
       const id = activePage.id.replace('page-', '');
@@ -6701,8 +6702,9 @@ if (resetToken) {
 // Sincronizacao em tempo real: busca do servidor a cada 30 segundos
 let _syncRunning = false;
 let _saveSyncRunning = false;
-let _lastSyncAt = null;
+let _lastSyncAt = localStorage.getItem('lastSyncAt') || null;
 function now() { return new Date().toISOString(); }
+function saveLastSyncAt() { try { localStorage.setItem('lastSyncAt', _lastSyncAt); } catch(e) {} }
 function syncRealtime() {
   if (!db || sessionStorage.getItem('logged_in') !== 'true' || _syncRunning) return;
   if (_saveSyncRunning) { console.log('[SYNC-RT] Pulando: salvarContrato esta sincronizando'); return; }
