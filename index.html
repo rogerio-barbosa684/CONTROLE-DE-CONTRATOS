@@ -3423,6 +3423,11 @@ function loadFromServer() {
       saveDestinatarios(cachedDestinatarios, true); saveCertidoes(cachedCertidoes); saveLicitacoes(cachedLicitacoes);
     }
     _lastSyncAt = data.server_now || now();
+    if (data.server_now) {
+      _serverOffset = new Date(data.server_now).getTime() - Date.now();
+      saveServerOffset();
+      console.log('[SYNC] Offset do servidor calculado:', _serverOffset, 'ms');
+    }
     saveLastSyncAt();
     const activePage = document.querySelector('.page.active');
     if (activePage) {
@@ -6794,8 +6799,10 @@ let _syncRunning = false;
 let _saveSyncRunning = false;
 let _lastSyncAt = localStorage.getItem('lastSyncAt') || null;
 let _pendingSync = false;
-function now() { return new Date().toISOString(); }
+let _serverOffset = parseInt(localStorage.getItem('serverOffset') || '0');
+function now() { return new Date(Date.now() + _serverOffset).toISOString(); }
 function saveLastSyncAt() { try { localStorage.setItem('lastSyncAt', _lastSyncAt); } catch(e) {} }
+function saveServerOffset() { try { localStorage.setItem('serverOffset', String(_serverOffset)); } catch(e) {} }
 function syncRealtime() {
   if (!db || sessionStorage.getItem('logged_in') !== 'true' || _syncRunning) return;
   if (_saveSyncRunning) { console.log('[SYNC-RT] Pulando: salvarContrato esta sincronizando'); return; }
