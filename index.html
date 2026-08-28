@@ -3234,23 +3234,22 @@ function syncToServer() {
     if (c.comprovante && c.comprovante.data && c.comprovante.data.length > 100) c.comprovante = { name: c.comprovante.name || '', data: '' };
     return c;
   };
-  const onlyChanged = (arr, keepFiles) => {
-    if (!_lastSyncAt) return (arr || []).map(keepFiles ? r => r : stripFiles);
-    return (arr || []).filter(r => {
-      const u = r.updated_at || r.criadoEm || r.createdAt || '';
-      return u > _lastSyncAt;
-    });
+  const keepFiles = (r) => r;
+  const prepareRecord = (r) => {
+    const u = r.updated_at || r.criadoEm || r.createdAt || '';
+    if (_lastSyncAt && u <= _lastSyncAt) return stripFiles(r);
+    return keepFiles(r);
   };
   const snapshot = {
-    contratos: onlyChanged(cachedContratos, false),
-    pagamentos: onlyChanged(cachedPagamentos, true),
-    destinatarios: onlyChanged(cachedDestinatarios, false),
-    certidoes: onlyChanged(cachedCertidoes, true),
-    licitacoes: onlyChanged(cachedLicitacoes, false),
+    contratos: (cachedContratos || []).map(r => prepareRecord(r)),
+    pagamentos: (cachedPagamentos || []).map(r => prepareRecord(r)),
+    destinatarios: (cachedDestinatarios || []).map(r => prepareRecord(r)),
+    certidoes: (cachedCertidoes || []).map(r => prepareRecord(r)),
+    licitacoes: (cachedLicitacoes || []).map(r => prepareRecord(r)),
     last_sync_at: _lastSyncAt
   };
   const total = snapshot.contratos.length + snapshot.pagamentos.length + snapshot.destinatarios.length + snapshot.certidoes.length + snapshot.licitacoes.length;
-  console.log('[SYNC-POST] Delta:', total, 'registros (contratos:', snapshot.contratos.length, 'pagamentos:', snapshot.pagamentos.length, ')');
+  console.log('[SYNC-POST] Enviando TODOS:', total, 'registros (contratos:', snapshot.contratos.length, 'pagamentos:', snapshot.pagamentos.length, ')');
   return getCsrfToken().then(() => {
     return fetch('/api/sync', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
@@ -3353,8 +3352,7 @@ function mergeDelta(cached, delta, entity) {
 }
 
 function loadFromServer() {
-  const since = _lastSyncAt ? '?since=' + encodeURIComponent(_lastSyncAt) : '';
-  return fetch('/api/sync' + since).then(r => {
+  return fetch('/api/sync').then(r => {
     if (r.status === 401) {
       console.error('[SYNC-GET] Sessao expirada (401)');
       sessionStorage.removeItem('logged_in');
@@ -3365,8 +3363,7 @@ function loadFromServer() {
     return r.json();
   }).then(data => {
     if (!data || !data.contratos) return;
-    const isDelta = !!_lastSyncAt;
-    console.log('[SYNC-GET] Recebidos:', data.contratos?.length || 0, 'contratos,', data.pagamentos?.length || 0, 'pagamentos', isDelta ? '(delta)' : '(full)');
+    console.log('[SYNC-GET] Recebidos:', data.contratos?.length || 0, 'contratos,', data.pagamentos?.length || 0, 'pagamentos (full)');
     const aditivosPorContrato = {};
     (data.aditivos || []).forEach(a => {
       if (!aditivosPorContrato[a.contract_id]) aditivosPorContrato[a.contract_id] = [];
