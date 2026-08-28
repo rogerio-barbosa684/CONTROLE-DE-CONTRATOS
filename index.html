@@ -2362,6 +2362,10 @@ requestDB.onblocked = (e) => {
 requestDB.onsuccess = (e) => {
   db = e.target.result;
   console.log('IndexedDB: aberto com sucesso. Stores:', Array.from(db.objectStoreNames));
+  db.onversionchange = () => {
+    console.warn('[DB] onversionchange detectado. Recarregando pagina...');
+    location.reload();
+  };
   const pendentes = dbReadyCallbacks.slice();
   dbReadyCallbacks = [];
   pendentes.forEach(cb => cb());
@@ -2455,17 +2459,23 @@ function loadDataFromDB() {
 function getTipos() { return cachedTipos; }
 function saveTipos(arr) {
   cachedTipos = arr;
-  const t = db.transaction("tipos", "readwrite");
-  t.objectStore("tipos").clear();
-  arr.forEach(a => t.objectStore("tipos").put(a));
+  try {
+    if (!db) return;
+    const t = db.transaction("tipos", "readwrite");
+    t.objectStore("tipos").clear();
+    arr.forEach(a => t.objectStore("tipos").put(a));
+  } catch (e) { console.error('[DB] saveTipos erro:', e.message); }
 }
 
 function getEmpresas() { return cachedEmpresas; }
 function saveEmpresas(arr) {
   cachedEmpresas = arr;
-  const t = db.transaction("empresas", "readwrite");
-  t.objectStore("empresas").clear();
-  arr.forEach(a => t.objectStore("empresas").put(a));
+  try {
+    if (!db) return;
+    const t = db.transaction("empresas", "readwrite");
+    t.objectStore("empresas").clear();
+    arr.forEach(a => t.objectStore("empresas").put(a));
+  } catch (e) { console.error('[DB] saveEmpresas erro:', e.message); }
   arr.forEach(a => {
     fetch('/api/companies', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
@@ -2484,9 +2494,12 @@ function saveUserEmpresas(userId, empresaIds) {
   } else {
     cachedUserEmpresas.push({ userId, empresaIds });
   }
-  const t = db.transaction("user_empresas", "readwrite");
-  t.objectStore("user_empresas").clear();
-  cachedUserEmpresas.forEach(a => t.objectStore("user_empresas").put(a));
+  try {
+    if (!db) return;
+    const t = db.transaction("user_empresas", "readwrite");
+    t.objectStore("user_empresas").clear();
+    cachedUserEmpresas.forEach(a => t.objectStore("user_empresas").put(a));
+  } catch (e) { console.error('[DB] saveUserEmpresas erro:', e.message); }
 }
 function getLoggedUserEmpresaIds() {
   const user = JSON.parse(sessionStorage.getItem('user') || '{}');
@@ -2500,18 +2513,24 @@ function getLoggedUserEmpresaIds() {
 function getDestinatarios() { return cachedDestinatarios.filter(d => !d.deleted_at); }
 function saveDestinatarios(arr, skipSync) {
   cachedDestinatarios = arr;
-  const t = db.transaction("destinatarios", "readwrite");
-  t.objectStore("destinatarios").clear();
-  arr.forEach(a => t.objectStore("destinatarios").put(a));
+  try {
+    if (!db) return;
+    const t = db.transaction("destinatarios", "readwrite");
+    t.objectStore("destinatarios").clear();
+    arr.forEach(a => t.objectStore("destinatarios").put(a));
+  } catch (e) { console.error('[DB] saveDestinatarios erro:', e.message); }
   if (!skipSync) syncToServer().catch(() => {});
 }
 
 function getSectors() { return cachedSectors; }
 function saveSectors(arr) {
   cachedSectors = arr;
-  const t = db.transaction("sectors", "readwrite");
-  t.objectStore("sectors").clear();
-  arr.forEach(a => t.objectStore("sectors").put(a));
+  try {
+    if (!db) return;
+    const t = db.transaction("sectors", "readwrite");
+    t.objectStore("sectors").clear();
+    arr.forEach(a => t.objectStore("sectors").put(a));
+  } catch (e) { console.error('[DB] saveSectors erro:', e.message); }
 }
 
 function getUserSetores(userId) {
@@ -2524,9 +2543,12 @@ function saveUserSetores(userId, setorIds) {
   } else {
     cachedUserSetores.push({ userId, setorIds });
   }
-  const t = db.transaction("user_setores", "readwrite");
-  t.objectStore("user_setores").clear();
-  cachedUserSetores.forEach(a => t.objectStore("user_setores").put(a));
+  try {
+    if (!db) return;
+    const t = db.transaction("user_setores", "readwrite");
+    t.objectStore("user_setores").clear();
+    cachedUserSetores.forEach(a => t.objectStore("user_setores").put(a));
+  } catch (e) { console.error('[DB] saveUserSetores erro:', e.message); }
 }
 function getLoggedUserSetorIds() {
   const user = JSON.parse(sessionStorage.getItem('user') || '{}');
@@ -2546,18 +2568,24 @@ function getLoggedUserSetorIds() {
 function getCertidoes() { return cachedCertidoes.filter(c => !c.deleted_at); }
 function saveCertidoes(arr) {
   cachedCertidoes = arr;
-  const t = db.transaction("certidoes", "readwrite");
-  t.objectStore("certidoes").clear();
-  arr.forEach(a => t.objectStore("certidoes").put(a));
+  try {
+    if (!db) return;
+    const t = db.transaction("certidoes", "readwrite");
+    t.objectStore("certidoes").clear();
+    arr.forEach(a => t.objectStore("certidoes").put(a));
+  } catch (e) { console.error('[DB] saveCertidoes erro:', e.message); }
 }
 
 // ===================== LICITACOES =====================
 function getLicitacoes() { return cachedLicitacoes.filter(l => !l.deleted_at); }
 function saveLicitacoes(arr) {
   cachedLicitacoes = arr;
-  const t = db.transaction("licitacoes", "readwrite");
-  t.objectStore("licitacoes").clear();
-  arr.forEach(a => t.objectStore("licitacoes").put(a));
+  try {
+    if (!db) return;
+    const t = db.transaction("licitacoes", "readwrite");
+    t.objectStore("licitacoes").clear();
+    arr.forEach(a => t.objectStore("licitacoes").put(a));
+  } catch (e) { console.error('[DB] saveLicitacoes erro:', e.message); }
 }
 
 function popularTipoSelect() {
@@ -3176,16 +3204,26 @@ function excluirDestinatario(id) {
 function getContratos() { return cachedContratos.filter(c => !c.deleted_at); }
 function saveContratos(arr) {
   cachedContratos = arr;
-  const t = db.transaction("contratos", "readwrite");
-  t.objectStore("contratos").clear();
-  arr.forEach(a => t.objectStore("contratos").put(a));
+  try {
+    if (!db) { console.warn('[DB] saveContratos: db null, pulando write'); return; }
+    const t = db.transaction("contratos", "readwrite");
+    t.objectStore("contratos").clear();
+    arr.forEach(a => t.objectStore("contratos").put(a));
+  } catch (e) {
+    console.error('[DB] saveContratos erro:', e.message);
+  }
 }
 function getPagamentos() { return cachedPagamentos.filter(p => !p.deleted_at); }
 function savePagamentos(arr) {
   cachedPagamentos = arr;
-  const t = db.transaction("pagamentos", "readwrite");
-  t.objectStore("pagamentos").clear();
-  arr.forEach(a => t.objectStore("pagamentos").put(a));
+  try {
+    if (!db) { console.warn('[DB] savePagamentos: db null, pulando write'); return; }
+    const t = db.transaction("pagamentos", "readwrite");
+    t.objectStore("pagamentos").clear();
+    arr.forEach(a => t.objectStore("pagamentos").put(a));
+  } catch (e) {
+    console.error('[DB] savePagamentos erro:', e.message);
+  }
 }
 
 function syncToServer() {
@@ -3221,6 +3259,13 @@ function syncToServer() {
       if (r.status === 413 || r.status === 502) {
         console.error('[SYNC] Payload grande demais:', r.status);
         mostrarToast('Arquivos grandes demais. Reduza o tamanho dos anexos.', 'erro');
+        return null;
+      }
+      if (r.status === 401) {
+        console.error('[SYNC] Sessao expirada (401)');
+        sessionStorage.removeItem('logged_in');
+        mostrarToast('Sessao expirada. Faca login novamente.', 'erro');
+        mostrarLogin();
         return null;
       }
       return r.json();
@@ -3309,7 +3354,16 @@ function mergeDelta(cached, delta, entity) {
 
 function loadFromServer() {
   const since = _lastSyncAt ? '?since=' + encodeURIComponent(_lastSyncAt) : '';
-  return fetch('/api/sync' + since).then(r => r.json()).then(data => {
+  return fetch('/api/sync' + since).then(r => {
+    if (r.status === 401) {
+      console.error('[SYNC-GET] Sessao expirada (401)');
+      sessionStorage.removeItem('logged_in');
+      mostrarToast('Sessao expirada. Faca login novamente.', 'erro');
+      mostrarLogin();
+      return null;
+    }
+    return r.json();
+  }).then(data => {
     if (!data || !data.contratos) return;
     const isDelta = !!_lastSyncAt;
     console.log('[SYNC-GET] Recebidos:', data.contratos?.length || 0, 'contratos,', data.pagamentos?.length || 0, 'pagamentos', isDelta ? '(delta)' : '(full)');
@@ -3391,18 +3445,22 @@ function loadFromServer() {
       }));
       cachedSectors = serverSectors; saveSectors(serverSectors);
     }
-    if (data.user_setores && data.user_setores.length) {
-      const grouped = {};
-      data.user_setores.forEach(us => {
-        if (!grouped[us.user_id]) grouped[us.user_id] = [];
-        grouped[us.user_id].push(us.setor_id);
-      });
-      const merged = Object.entries(grouped).map(([userId, setorIds]) => ({ userId: parseInt(userId), setorIds }));
-      cachedUserSetores = merged;
-      const t = db.transaction("user_setores", "readwrite");
-      t.objectStore("user_setores").clear();
-      merged.forEach(a => t.objectStore("user_setores").put(a));
-    }
+      if (data.user_setores && data.user_setores.length) {
+        const grouped = {};
+        data.user_setores.forEach(us => {
+          if (!grouped[us.user_id]) grouped[us.user_id] = [];
+          grouped[us.user_id].push(us.setor_id);
+        });
+        const merged = Object.entries(grouped).map(([userId, setorIds]) => ({ userId: parseInt(userId), setorIds }));
+        cachedUserSetores = merged;
+        try {
+          if (db) {
+            const t = db.transaction("user_setores", "readwrite");
+            t.objectStore("user_setores").clear();
+            merged.forEach(a => t.objectStore("user_setores").put(a));
+          }
+        } catch (e) { console.error('[DB] user_setores loadFromServer erro:', e.message); }
+      }
     setTimeout(checkNotificacoes, 500);
   }).catch(e => {
     console.error('[SYNC] loadFromServer falhou:', e);
@@ -4586,6 +4644,7 @@ function limparFormContrato() {
 }
 
 async function salvarContrato() {
+  if (_saveSyncRunning) { mostrarToast('Aguarde, já há um salvamento em andamento...', 'info'); return; }
   const numero = document.getElementById('f-numero').value.trim();
   const objeto = document.getElementById('f-objeto').value.trim();
   const parte  = document.getElementById('f-parte').value.trim();
