@@ -1328,7 +1328,7 @@ export async function handler(event) {
         }
         if (!body) return json({ ok: false, erro: 'JSON invalido ou vazio.' }, 400)
         const importados = { contratos: 0, pagamentos: 0, aditivos: 0, ignorados: 0 }
-        const MAX_BASE64 = 15 * 1024 * 1024
+        const MAX_BASE64 = 4 * 1024 * 1024
 
         for (const c of (body.contratos || [])) {
           const cid = (c.id || '').trim()

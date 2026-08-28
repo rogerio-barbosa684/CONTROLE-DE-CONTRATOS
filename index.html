@@ -6734,6 +6734,7 @@ if (resetToken) {
 let _syncRunning = false;
 let _saveSyncRunning = false;
 let _lastSyncAt = localStorage.getItem('lastSyncAt') || null;
+let _pendingSync = false;
 function now() { return new Date().toISOString(); }
 function saveLastSyncAt() { try { localStorage.setItem('lastSyncAt', _lastSyncAt); } catch(e) {} }
 function syncRealtime() {
@@ -6746,17 +6747,20 @@ function syncRealtime() {
   loadFromServer().then(() => {
     if (_saveSyncRunning) { console.log('[SYNC-RT] Pulando POST: salvarContrato esta sincronizando'); return; }
     return syncToServer();
-  }).then(() => {
+  }).then((resp) => {
     _syncRunning = false;
+    _pendingSync = false;
     console.log('[SYNC-RT] Ciclo concluido');
     if (indicator) { indicator.style.color = '#8f8'; indicator.textContent = '● Sincronizado'; setTimeout(() => { indicator.style.display = 'none'; }, 3000); }
   }).catch((e) => {
     _syncRunning = false;
+    _pendingSync = true;
     console.error('[SYNC-RT] Erro:', e);
-    if (indicator) { indicator.style.color = '#f66'; indicator.textContent = '● Falha sync'; }
+    if (indicator) { indicator.style.color = '#f66'; indicator.textContent = '● Falha sync - retentando...'; }
   });
 }
 setInterval(syncRealtime, 30000);
+setInterval(() => { if (_pendingSync && !_syncRunning && !_saveSyncRunning) syncRealtime(); }, 10000);
 </script>
 </body>
 </html>
