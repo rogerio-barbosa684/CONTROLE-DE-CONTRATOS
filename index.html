@@ -2231,6 +2231,7 @@ function mostrarApp(user) {
     if (ddSistema) ddSistema.style.display = 'none';
   }
   loadDataFromDB();
+  setTimeout(() => { syncRealtime(); }, 2000);
 }
 
 function mostrarLogin() {
@@ -3189,21 +3190,51 @@ function savePagamentos(arr) {
 
 function syncToServer() {
   if (!db) return Promise.resolve();
-  const snapshot = { contratos: cachedContratos || [], pagamentos: cachedPagamentos || [], destinatarios: cachedDestinatarios || [], certidoes: cachedCertidoes || [], licitacoes: cachedLicitacoes || [], last_sync_at: _lastSyncAt };
-  console.log('[SYNC-POST] Snapshot pagamentos:', snapshot.pagamentos.length, 'contratos:', snapshot.contratos.length);
+  const stripFiles = (r) => {
+    const c = Object.assign({}, r);
+    if (c.arquivo && c.arquivo.data && c.arquivo.data.length > 100) c.arquivo = { name: c.arquivo.name || '', data: '' };
+    if (c.comprovante && c.comprovante.data && c.comprovante.data.length > 100) c.comprovante = { name: c.comprovante.name || '', data: '' };
+    return c;
+  };
+  const onlyChanged = (arr, keepFiles) => {
+    if (!_lastSyncAt) return (arr || []).map(keepFiles ? r => r : stripFiles);
+    return (arr || []).filter(r => {
+      const u = r.updated_at || r.criadoEm || r.createdAt || '';
+      return u > _lastSyncAt;
+    });
+  };
+  const snapshot = {
+    contratos: onlyChanged(cachedContratos, false),
+    pagamentos: onlyChanged(cachedPagamentos, true),
+    destinatarios: onlyChanged(cachedDestinatarios, false),
+    certidoes: onlyChanged(cachedCertidoes, true),
+    licitacoes: onlyChanged(cachedLicitacoes, false),
+    last_sync_at: _lastSyncAt
+  };
+  const total = snapshot.contratos.length + snapshot.pagamentos.length + snapshot.destinatarios.length + snapshot.certidoes.length + snapshot.licitacoes.length;
+  console.log('[SYNC-POST] Delta:', total, 'registros (contratos:', snapshot.contratos.length, 'pagamentos:', snapshot.pagamentos.length, ')');
   return getCsrfToken().then(() => {
     return fetch('/api/sync', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
       body:JSON.stringify(snapshot)
-    }).then(r => r.json()).then(resp => {
+    }).then(r => {
+      if (r.status === 413 || r.status === 502) {
+        console.error('[SYNC] Payload grande demais:', r.status);
+        mostrarToast('Arquivos grandes demais. Reduza o tamanho dos anexos.', 'erro');
+        return null;
+      }
+      return r.json();
+    }).then(resp => {
       if (resp && !resp.ok) {
         console.error('[SYNC] Erro do servidor:', resp.erro)
+        mostrarToast('Erro na sincronização: ' + (resp.erro || 'desconhecido'), 'erro');
       } else if (resp) {
         console.log('[SYNC-POST] Resposta:', resp.importados);
       }
       return resp;
     }).catch(e => {
       console.error('[SYNC] Falha na conexao:', e)
+      mostrarToast('Falha ao sincronizar. Verifique sua internet.', 'erro');
       return null;
     });
   }).catch(e => {
@@ -4731,11 +4762,11 @@ async function salvarContrato() {
     if (resp && resp.ok) {
       mostrarToast('Contrato salvo e sincronizado com sucesso!', 'sucesso');
     } else {
-      mostrarToast('Contrato salvo localmente. Sincronização pendente.', 'info');
+      mostrarToast('ATENCAO: Contrato salvo APENAS localmente. Nao foi possivel enviar ao servidor. Sera retentado automaticamente.', 'erro');
     }
   }).catch(() => {
     _saveSyncRunning = false;
-    mostrarToast('Contrato salvo localmente. Sync falhou, será retentado.', 'info');
+    mostrarToast('ATENCAO: Contrato salvo APENAS localmente. Nao foi possivel enviar ao servidor. Sera retentado automaticamente.', 'erro');
   });
   limparFormContrato();
   document.querySelectorAll('nav button')[1].click(); // Goto contratos
