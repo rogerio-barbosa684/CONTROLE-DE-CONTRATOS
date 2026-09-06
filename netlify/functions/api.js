@@ -1269,6 +1269,228 @@ export async function handler(event) {
       return json({ ok: true })
     }
 
+    // ─── CONTRACTS GET (list) ────────────────────────────────────────────
+    if (route === 'contracts' && httpMethod === 'GET') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      const { data } = await getSupabase().from('contracts').select('*').eq('active', 1).order('created_at', { ascending: false })
+      return json({ ok: true, contratos: data || [] })
+    }
+
+    // ─── CONTRACTS POST (create) ─────────────────────────────────────────
+    if (route === 'contracts' && httpMethod === 'POST') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const cid = body.id || crypto.randomUUID()
+      const numero = (body.numero || '').trim()
+      if (!numero) return json({ ok: false, erro: 'Numero do contrato e obrigatorio.' }, 400)
+      const { data: existing } = await getSupabase().from('contracts').select('id').eq('id', cid).single()
+      if (existing) return json({ ok: false, erro: 'Contrato ja existe com este ID.' }, 400)
+      const arquivoJson = body.arquivo ? JSON.stringify(body.arquivo) : null
+      const pgtoConfig = body.pgtoConfig || {}
+      const vals = {
+        id: cid, numero,
+        fornecedor: (body.parte || '').trim(),
+        cnpj: (body.doc || '').trim(),
+        objeto: (body.objeto || '').trim(),
+        valor_total: parseFloat(body.valor || 0),
+        inicio: (body.inicio || '').trim(),
+        fim: (body.fim || '').trim(),
+        tem_parcelas: body.temParcelas ? 1 : 0,
+        qtd_parcelas: pgtoConfig.qtdParcelas || null,
+        valor_parcela: safeFloat(pgtoConfig.valorParcela),
+        dia_vencimento: pgtoConfig.diaVenc || null,
+        responsavel: (body.responsavel || '').trim(),
+        setor: (body.setor || '').trim(),
+        obs: (body.obs || '').trim(),
+        tipo: body.tipo || '',
+        empresa_id: body.empresaId || null,
+        active: 1,
+        forma_pagamento: pgtoConfig.forma || null,
+        arquivo_contrato: arquivoJson,
+        resumo: body.resumo || null,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      const { error } = await getSupabase().from('contracts').insert(vals)
+      if (error) return json({ ok: false, erro: error.message }, 500)
+      await audit(user.id, 'CREATE', 'contract', cid, `Contrato ${numero} criado`)
+      return json({ ok: true, id: cid })
+    }
+
+    // ─── CONTRACTS PUT (full update) ─────────────────────────────────────
+    if (parts[0] === 'contracts' && parts[1] && httpMethod === 'PUT') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const upd = {}
+      if (body.active !== undefined) upd.active = body.active ? 1 : 0
+      if (body.numero !== undefined) upd.numero = (body.numero || '').trim()
+      if (body.parte !== undefined) upd.fornecedor = (body.parte || '').trim()
+      if (body.doc !== undefined) upd.cnpj = (body.doc || '').trim()
+      if (body.objeto !== undefined) upd.objeto = (body.objeto || '').trim()
+      if (body.valor !== undefined) upd.valor_total = parseFloat(body.valor || 0)
+      if (body.inicio !== undefined) upd.inicio = (body.inicio || '').trim()
+      if (body.fim !== undefined) upd.fim = (body.fim || '').trim()
+      if (body.tipo !== undefined) upd.tipo = body.tipo || ''
+      if (body.empresaId !== undefined) upd.empresa_id = body.empresaId || null
+      if (body.responsavel !== undefined) upd.responsavel = (body.responsavel || '').trim()
+      if (body.setor !== undefined) upd.setor = (body.setor || '').trim()
+      if (body.obs !== undefined) upd.obs = (body.obs || '').trim()
+      if (body.resumo !== undefined) upd.resumo = body.resumo || null
+      if (body.temParcelas !== undefined) upd.tem_parcelas = body.temParcelas ? 1 : 0
+      if (body.pgtoConfig) {
+        const pg = body.pgtoConfig
+        if (pg.forma !== undefined) upd.forma_pagamento = pg.forma || null
+        if (pg.qtdParcelas !== undefined) upd.qtd_parcelas = pg.qtdParcelas || null
+        if (pg.valorParcela !== undefined) upd.valor_parcela = safeFloat(pg.valorParcela)
+        if (pg.diaVenc !== undefined) upd.dia_vencimento = pg.diaVenc || null
+      }
+      if (body.arquivo !== undefined) upd.arquivo_contrato = body.arquivo ? JSON.stringify(body.arquivo) : null
+      upd.updated_at = new Date().toISOString()
+      await getSupabase().from('contracts').update(upd).eq('id', parts[1])
+      await audit(user.id, 'UPDATE', 'contract', parts[1], `Contrato ${parts[1]} atualizado`)
+      return json({ ok: true })
+    }
+
+    // ─── PAYMENTS GET (list) ─────────────────────────────────────────────
+    if (route === 'payments' && httpMethod === 'GET') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      const { data } = await getSupabase().from('payments').select('*').order('vencimento')
+      return json({ ok: true, pagamentos: data || [] })
+    }
+
+    // ─── PAYMENTS POST (create) ──────────────────────────────────────────
+    if (route === 'payments' && httpMethod === 'POST') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const pid = body.id || crypto.randomUUID()
+      const cid = (body.contratoId || '').trim()
+      if (!cid) return json({ ok: false, erro: 'contract_id e obrigatorio.' }, 400)
+      const comprovanteJson = body.comprovante ? JSON.stringify(body.comprovante) : null
+      const vals = {
+        id: pid, contract_id: cid,
+        descricao: (body.descricao || '').trim(),
+        vencimento: (body.vencimento || '').trim(),
+        valor: parseFloat(body.valor || 0),
+        contrato_num: (body.contratoNum || '').trim() || null,
+        data_pagamento: (body.dataPagamento || '').trim() || null,
+        valor_pago: safeFloat(body.valorPago) || (body.dataPagamento ? parseFloat(body.valor || 0) : null),
+        forma_pagamento: (body.formaPgto || '').trim() || null,
+        status: body.dataPagamento ? 'pago' : (body.status || 'pendente'),
+        obs: (body.obs || '').trim(),
+        comprovante: comprovanteJson,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      const { error } = await getSupabase().from('payments').insert(vals)
+      if (error) return json({ ok: false, erro: error.message }, 500)
+      await audit(user.id, 'CREATE', 'payment', pid, `Pagamento criado para contrato ${cid}`)
+      return json({ ok: true, id: pid })
+    }
+
+    // ─── PAYMENTS PUT (update) ───────────────────────────────────────────
+    if (parts[0] === 'payments' && parts[1] && httpMethod === 'PUT') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const upd = {}
+      if (body.descricao !== undefined) upd.descricao = (body.descricao || '').trim()
+      if (body.vencimento !== undefined) upd.vencimento = (body.vencimento || '').trim()
+      if (body.valor !== undefined) upd.valor = parseFloat(body.valor || 0)
+      if (body.contratoNum !== undefined) upd.contrato_num = (body.contratoNum || '').trim()
+      if (body.dataPagamento !== undefined) upd.data_pagamento = (body.dataPagamento || '').trim() || null
+      if (body.valorPago !== undefined) upd.valor_pago = safeFloat(body.valorPago)
+      if (body.formaPgto !== undefined) upd.forma_pagamento = (body.formaPgto || '').trim() || null
+      if (body.status !== undefined) upd.status = body.status || 'pendente'
+      if (body.obs !== undefined) upd.obs = (body.obs || '').trim()
+      if (body.comprovante !== undefined) upd.comprovante = body.comprovante ? JSON.stringify(body.comprovante) : null
+      if (body.deleted_at !== undefined) upd.deleted_at = body.deleted_at || null
+      upd.updated_at = new Date().toISOString()
+      await getSupabase().from('payments').update(upd).eq('id', parts[1])
+      await audit(user.id, 'UPDATE', 'payment', parts[1], `Pagamento ${parts[1]} atualizado`)
+      return json({ ok: true })
+    }
+
+    // ─── ADDITIVES POST (create) ─────────────────────────────────────────
+    if (route === 'additives' && httpMethod === 'POST') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const aid = body.id || crypto.randomUUID()
+      const cid = (body.contract_id || '').trim()
+      if (!cid) return json({ ok: false, erro: 'contract_id e obrigatorio.' }, 400)
+      const arquivoJson = body.arquivo ? JSON.stringify(body.arquivo) : null
+      const vals = {
+        id: aid, contract_id: cid,
+        numero: (body.numero || '').trim(),
+        data_aditivo: (body.data || '').trim(),
+        tipo: (body.tipo || '').trim(),
+        nova_data_fim: (body.novaData || '').trim() || null,
+        acrescimo_valor: safeFloat(body.novoValor),
+        descricao: (body.objeto || '').trim(),
+        arquivo_contrato: arquivoJson,
+        resumo: body.resumo || null,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      const { error } = await getSupabase().from('additives').insert(vals)
+      if (error) return json({ ok: false, erro: error.message }, 500)
+      await audit(user.id, 'CREATE', 'additive', aid, `Aditivo criado para contrato ${cid}`)
+      return json({ ok: true, id: aid })
+    }
+
+    // ─── ADDITIVES PUT (update) ──────────────────────────────────────────
+    if (parts[0] === 'additives' && parts[1] && httpMethod === 'PUT') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      const upd = {}
+      if (body.numero !== undefined) upd.numero = (body.numero || '').trim()
+      if (body.data !== undefined) upd.data_aditivo = (body.data || '').trim()
+      if (body.tipo !== undefined) upd.tipo = (body.tipo || '').trim()
+      if (body.novaData !== undefined) upd.nova_data_fim = (body.novaData || '').trim() || null
+      if (body.novoValor !== undefined) upd.acrescimo_valor = safeFloat(body.novoValor)
+      if (body.objeto !== undefined) upd.descricao = (body.objeto || '').trim()
+      if (body.arquivo !== undefined) upd.arquivo_contrato = body.arquivo ? JSON.stringify(body.arquivo) : null
+      if (body.resumo !== undefined) upd.resumo = body.resumo || null
+      if (body.deleted_at !== undefined) upd.deleted_at = body.deleted_at || null
+      upd.updated_at = new Date().toISOString()
+      await getSupabase().from('additives').update(upd).eq('id', parts[1])
+      await audit(user.id, 'UPDATE', 'additive', parts[1], `Aditivo ${parts[1]} atualizado`)
+      return json({ ok: true })
+    }
+
+    // ─── ADDITIVES DELETE ────────────────────────────────────────────────
+    if (parts[0] === 'additives' && parts[1] && httpMethod === 'DELETE') {
+      const authErr = requireAuth(user)
+      if (authErr) return authErr
+      if (!validateCsrf(user, body.csrf_token)) {
+        return json({ ok: false, erro: 'CSRF invalido' }, 403)
+      }
+      await getSupabase().from('additives').delete().eq('id', parts[1])
+      await audit(user.id, 'DELETE', 'additive', parts[1], `Aditivo ${parts[1]} excluido`)
+      return json({ ok: true })
+    }
+
     // ─── SYNC ────────────────────────────────────────────────────────────
     if (route === 'sync') {
       if (httpMethod === 'GET') {

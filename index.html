@@ -787,6 +787,7 @@
     .pg-info { font-size:0.78rem; color:#888; margin-left:auto; }
     .pg-select { background:var(--card-bg,#fff); border:1px solid var(--border,#ddd); border-radius:6px; padding:5px 8px; font-size:0.82rem; color:var(--text,#333); cursor:pointer; }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body>
 
@@ -3228,18 +3229,7 @@ function savePagamentos(arr) {
 
 function syncToServer() {
   if (!db) return Promise.resolve();
-  const stripFiles = (r) => {
-    const c = Object.assign({}, r);
-    if (c.arquivo && c.arquivo.data && c.arquivo.data.length > 100) c.arquivo = { name: c.arquivo.name || '', data: '' };
-    if (c.comprovante && c.comprovante.data && c.comprovante.data.length > 100) c.comprovante = { name: c.comprovante.name || '', data: '' };
-    return c;
-  };
-  const keepFiles = (r) => r;
-  const prepareRecord = (r) => {
-    const u = r.updated_at || r.criadoEm || r.createdAt || '';
-    if (_lastSyncAt && u <= _lastSyncAt) return stripFiles(r);
-    return keepFiles(r);
-  };
+  const prepareRecord = (r) => r;
   const snapshot = {
     contratos: (cachedContratos || []).map(r => prepareRecord(r)),
     pagamentos: (cachedPagamentos || []).map(r => prepareRecord(r)),
@@ -3986,10 +3976,19 @@ async function salvarCertidao() {
   saveCertidoes(certidoes);
   renderCertidoes();
   fecharModal('modal-certidao');
-  syncToServer().then(() => {
-    mostrarToast('Certidão salva e sincronizada!', 'sucesso');
+
+  const savedId = editId || certidoes[certidoes.length - 1].id;
+  const certData = certidoes.find(c => c.id === savedId);
+  const method = editId ? 'PUT' : 'POST';
+  const path = editId ? 'certidoes/' + savedId : 'certidoes';
+  apiCall(method, path, certData).then(r => {
+    mostrarToast(r && r.ok ? 'Certidão salva e sincronizada!' : 'Certidão salva localmente.', r && r.ok ? 'sucesso' : 'info');
   }).catch(() => {
-    mostrarToast('Certidão salva localmente.', 'info');
+    syncToServer().then(() => {
+      mostrarToast('Certidão salva e sincronizada!', 'sucesso');
+    }).catch(() => {
+      mostrarToast('Certidão salva localmente.', 'info');
+    });
   });
 }
 
@@ -4000,7 +3999,9 @@ function excluirCertidao(id) {
   if (idx !== -1) { certidoes[idx].deleted_at = now(); certidoes[idx].updated_at = now(); }
   saveCertidoes(certidoes);
   renderCertidoes();
-  syncToServer().catch(() => {});
+  apiCall('PUT', 'certidoes/' + id, certidoes[idx]).catch(() => {
+    syncToServer().catch(() => {});
+  });
   mostrarToast('Certidão excluída.', 'sucesso');
 }
 
@@ -4199,10 +4200,19 @@ async function salvarLicitacao() {
   saveLicitacoes(licitacoes);
   renderLicitacoes();
   fecharModal('modal-licitacao');
-  syncToServer().then(() => {
-    mostrarToast('Licitação salva e sincronizada!', 'sucesso');
+
+  const savedId = editId || licitacoes[licitacoes.length - 1].id;
+  const lcData = licitacoes.find(l => l.id === savedId);
+  const method = editId ? 'PUT' : 'POST';
+  const path = editId ? 'licitacoes/' + savedId : 'licitacoes';
+  apiCall(method, path, lcData).then(r => {
+    mostrarToast(r && r.ok ? 'Licitação salva e sincronizada!' : 'Licitação salva localmente.', r && r.ok ? 'sucesso' : 'info');
   }).catch(() => {
-    mostrarToast('Licitação salva localmente.', 'info');
+    syncToServer().then(() => {
+      mostrarToast('Licitação salva e sincronizada!', 'sucesso');
+    }).catch(() => {
+      mostrarToast('Licitação salva localmente.', 'info');
+    });
   });
 }
 
@@ -4216,7 +4226,9 @@ function excluirLicitacao(id) {
   if (idx !== -1) { licitacoes[idx].deleted_at = now(); licitacoes[idx].updated_at = now(); }
   saveLicitacoes(licitacoes);
   renderLicitacoes();
-  syncToServer().catch(() => {});
+  apiCall('PUT', 'licitacoes/' + id, licitacoes[idx]).catch(() => {
+    syncToServer().catch(() => {});
+  });
   mostrarToast('Licitação excluída.', 'sucesso');
 }
 
@@ -4229,7 +4241,9 @@ function inativarLicitacao(id) {
   saveLicitacoes(licitacoes);
   renderLicitacoes();
   renderDashboard();
-  syncToServer().catch(() => {});
+  apiCall('PUT', 'licitacoes/' + id, l).catch(() => {
+    syncToServer().catch(() => {});
+  });
   mostrarToast(`Licitação ${l.status === 'em_andamento' ? 'reativada' : 'concluída'} com sucesso.`, 'sucesso');
 }
 
@@ -4323,7 +4337,9 @@ async function adicionarArquivoLicitacao() {
     if (idx !== -1) {
       licitacoes[idx].arquivos = _licitacaoArquivosTemp;
       saveLicitacoes(licitacoes);
-      syncToServer().catch(() => {});
+      apiCall('PUT', 'licitacoes/' + editId, licitacoes[idx]).catch(() => {
+        syncToServer().catch(() => {});
+      });
     }
   }
 }
@@ -4339,7 +4355,9 @@ function removerArquivoLicitacao(idx) {
     if (licIdx !== -1) {
       licitacoes[licIdx].arquivos = _licitacaoArquivosTemp;
       saveLicitacoes(licitacoes);
-      syncToServer().catch(() => {});
+      apiCall('PUT', 'licitacoes/' + editId, licitacoes[licIdx]).catch(() => {
+        syncToServer().catch(() => {});
+      });
     }
   }
 }
@@ -4659,6 +4677,10 @@ async function salvarContrato() {
   }
 
   _saveSyncRunning = true;
+  const editingId = window._editandoContrato;
+  const existingPaymentIds = editingId
+    ? getPagamentos().filter(p => p.contratoId === editingId).map(p => p.id)
+    : [];
 
   let arquivoB64 = null;
   if (_arquivoContrato instanceof File) {
@@ -4712,11 +4734,15 @@ async function salvarContrato() {
         updated_at: now()
       };
 
-      // Regerar parcelas na edicao: preserva pagas, remove nao pagas, cria novas
+      // Regerar parcelas na edicao: preserva pagas, marca nao pagas como deletadas, cria novas
       const pagamentos = getPagamentos();
       const paidPayments = pagamentos.filter(p =>
         p.contratoId === window._editandoContrato && p.dataPagamento !== null
       );
+      const unpaidPayments = pagamentos.filter(p =>
+        p.contratoId === window._editandoContrato && p.dataPagamento === null
+      );
+      unpaidPayments.forEach(p => { p.deleted_at = now(); p.updated_at = now(); });
       const otherPayments = pagamentos.filter(p =>
         p.contratoId !== window._editandoContrato
       );
@@ -4733,7 +4759,7 @@ async function salvarContrato() {
           obs: '', comprovante: null, status: 'pendente',
           updated_at: now()
         }));
-        savePagamentos(otherPayments.concat(paidPayments).concat(novasParcelasAvulso));
+        savePagamentos(otherPayments.concat(paidPayments).concat(unpaidPayments).concat(novasParcelasAvulso));
       } else if (temParcelas && pgtoConfig && pgtoConfig.forma !== 'avulso') {
         const valorJaPago = paidPayments.reduce((s, p) => s + (p.valorPago || p.valor || 0), 0);
         const saldoRestante = valor - valorJaPago;
@@ -4768,10 +4794,10 @@ async function salvarContrato() {
             });
           }
         }
-        savePagamentos(otherPayments.concat(paidPayments).concat(novasParcelas));
+        savePagamentos(otherPayments.concat(paidPayments).concat(unpaidPayments).concat(novasParcelas));
       } else {
-        // Sem parcelas: mantem so as pagas
-        savePagamentos(otherPayments.concat(paidPayments));
+        // Sem parcelas: mantem so as pagas, marca nao pagas como deletadas
+        savePagamentos(otherPayments.concat(paidPayments).concat(unpaidPayments));
       }
     }
     window._editandoContrato = null;
@@ -4818,16 +4844,49 @@ async function salvarContrato() {
 
   saveContratos(contratos);
   mostrarToast('Salvando no servidor...', 'info');
-  syncToServer().then(resp => {
-    _saveSyncRunning = false;
-    if (resp && resp.ok) {
-      mostrarToast('Contrato salvo e sincronizado com sucesso!', 'sucesso');
+
+  const contractId = editingId || contratos[contratos.length - 1].id;
+  const contractData = {
+    id: contractId, numero, objeto, parte, valor, inicio, fim,
+    tipo: document.getElementById('f-tipo').value,
+    empresaId: document.getElementById('f-empresa').value || null,
+    doc: document.getElementById('f-doc').value,
+    responsavel: document.getElementById('f-responsavel').value,
+    setor: document.getElementById('f-setor').value,
+    obs: document.getElementById('f-obs').value,
+    temParcelas, pgtoConfig, arquivo: arquivoB64
+  };
+
+  async function pushContrato() {
+    if (editingId) {
+      const r = await apiCall('PUT', 'contracts/' + editingId, contractData);
+      if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao atualizar contrato');
     } else {
-      mostrarToast('ATENCAO: Contrato salvo APENAS localmente. Nao foi possivel enviar ao servidor. Sera retentado automaticamente.', 'erro');
+      const r = await apiCall('POST', 'contracts', contractData);
+      if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao criar contrato');
     }
-  }).catch(() => {
+    const pays = getPagamentos().filter(p => p.contratoId === contractId);
+    for (const p of pays) {
+      if (p.deleted_at) {
+        await apiCall('PUT', 'payments/' + p.id, { deleted_at: p.deleted_at, status: 'cancelado' });
+      } else if (!existingPaymentIds.includes(p.id)) {
+        await apiCall('POST', 'payments', p);
+      }
+    }
+  }
+
+  pushContrato().then(() => {
     _saveSyncRunning = false;
-    mostrarToast('ATENCAO: Contrato salvo APENAS localmente. Nao foi possivel enviar ao servidor. Sera retentado automaticamente.', 'erro');
+    mostrarToast('Contrato salvo e sincronizado com sucesso!', 'sucesso');
+  }).catch(e => {
+    console.error('[PUSH] Erro no push direto, usando sync:', e.message);
+    syncToServer().then(resp => {
+      _saveSyncRunning = false;
+      mostrarToast(resp && resp.ok ? 'Contrato salvo e sincronizado!' : 'ATENCAO: Contrato salvo APENAS localmente. Sera retentado automaticamente.', resp && resp.ok ? 'sucesso' : 'erro');
+    }).catch(() => {
+      _saveSyncRunning = false;
+      mostrarToast('ATENCAO: Contrato salvo APENAS localmente. Sera retentado automaticamente.', 'erro');
+    });
   });
   limparFormContrato();
   document.querySelectorAll('nav button')[1].click(); // Goto contratos
@@ -5168,7 +5227,11 @@ function excluirContrato(id) {
   renderContratos();
   renderDashboard();
   _saveSyncRunning = true;
-  syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
+  apiCall('PUT', 'contracts/' + id, { deleted_at: ts, updated_at: ts }).then(r => {
+    _saveSyncRunning = false;
+  }).catch(() => {
+    syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
+  });
 }
 
 function inativarContrato(id) {
@@ -5181,7 +5244,11 @@ function inativarContrato(id) {
   renderContratos();
   renderDashboard();
   _saveSyncRunning = true;
-  syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
+  apiCall('PUT', 'contracts/' + id, { active: c.active, updated_at: c.updated_at }).then(r => {
+    _saveSyncRunning = false;
+  }).catch(() => {
+    syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
+  });
   mostrarToast(`Contrato ${c.active ? 'ativado' : 'inativado'} com sucesso.`, 'sucesso');
 }
 
@@ -5291,10 +5358,16 @@ async function salvarAditivo() {
   saveContratos(contratos);
   fecharModal('modal-aditivo');
   renderContratos();
-  syncToServer().then(() => {
-    mostrarToast('Aditivo salvo e sincronizado!', 'sucesso');
+
+  const contratoData = contratos[idx];
+  apiCall('PUT', 'contracts/' + contratoData.id, contratoData).then(r => {
+    mostrarToast(r && r.ok ? 'Aditivo salvo e sincronizado!' : 'Aditivo salvo localmente.', r && r.ok ? 'sucesso' : 'info');
   }).catch(() => {
-    mostrarToast('Aditivo salvo localmente.', 'info');
+    syncToServer().then(() => {
+      mostrarToast('Aditivo salvo e sincronizado!', 'sucesso');
+    }).catch(() => {
+      mostrarToast('Aditivo salvo localmente.', 'info');
+    });
   });
 }
 
@@ -5320,7 +5393,9 @@ function excluirAditivo(contratoId, aditivoId) {
   recalcularContrato(contratos, idx);
   saveContratos(contratos);
   renderContratos();
-  syncToServer().catch(() => {});
+  apiCall('PUT', 'contracts/' + contratoId, contratos[idx]).catch(() => {
+    syncToServer().catch(() => {});
+  });
   mostrarToast('Aditivo excluido e valores recalculados.', 'sucesso');
 }
 
@@ -5442,9 +5517,10 @@ function salvarPagamento() {
   const c = getContratos().find(x=>x.id===contratoId);
   const pagamentos = getPagamentos();
   const dataPgto = document.getElementById('mp-datapgto').value || null;
+  const newId = uid();
 
-  pagamentos.push({
-    id: uid(), contratoId, contratoNum: c.numero,
+  const newPagamento = {
+    id: newId, contratoId, contratoNum: c.numero,
     descricao: desc || 'Pagamento avulso',
     valor, vencimento: venc,
     dataPagamento: dataPgto,
@@ -5452,16 +5528,24 @@ function salvarPagamento() {
     obs: document.getElementById('mp-obs').value,
     status: dataPgto ? 'pago' : 'pendente',
     updated_at: now()
-  });
+  };
+
+  pagamentos.push(newPagamento);
   savePagamentos(pagamentos);
   fecharModal('modal-pagamento');
   renderPagamentos();
-  syncToServer().then(() => {
+
+  apiCall('POST', 'payments', newPagamento).then(r => {
     _saveSyncRunning = false;
-    mostrarToast('Pagamento salvo e sincronizado!', 'sucesso');
+    mostrarToast(r && r.ok ? 'Pagamento salvo e sincronizado!' : 'Pagamento salvo localmente.', r && r.ok ? 'sucesso' : 'info');
   }).catch(() => {
-    _saveSyncRunning = false;
-    mostrarToast('Pagamento salvo localmente.', 'info');
+    syncToServer().then(() => {
+      _saveSyncRunning = false;
+      mostrarToast('Pagamento salvo e sincronizado!', 'sucesso');
+    }).catch(() => {
+      _saveSyncRunning = false;
+      mostrarToast('Pagamento salvo localmente.', 'info');
+    });
   });
 }
 
@@ -5506,12 +5590,19 @@ async function confirmarBaixa() {
   fecharModal('modal-baixar');
   renderPagamentos();
   renderDashboard();
-  syncToServer().then(() => {
+
+  const updated = pagamentos[idx];
+  apiCall('PUT', 'payments/' + _baixaId, updated).then(r => {
     _saveSyncRunning = false;
-    mostrarToast('Baixa registrada e sincronizada!', 'sucesso');
+    mostrarToast(r && r.ok ? 'Baixa registrada e sincronizada!' : 'Baixa registrada localmente.', r && r.ok ? 'sucesso' : 'info');
   }).catch(() => {
-    _saveSyncRunning = false;
-    mostrarToast('Baixa registrada localmente.', 'info');
+    syncToServer().then(() => {
+      _saveSyncRunning = false;
+      mostrarToast('Baixa registrada e sincronizada!', 'sucesso');
+    }).catch(() => {
+      _saveSyncRunning = false;
+      mostrarToast('Baixa registrada localmente.', 'info');
+    });
   });
 }
 
@@ -5527,7 +5618,11 @@ function excluirPgto(id) {
   savePagamentos(pagamentos);
   renderPagamentos();
   renderDashboard();
-  syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
+  apiCall('PUT', 'payments/' + id, { deleted_at: pagamentos[idx].deleted_at, status: 'cancelado', updated_at: pagamentos[idx].updated_at }).then(r => {
+    _saveSyncRunning = false;
+  }).catch(() => {
+    syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
+  });
 }
 
 function estornarBaixa(id) {
@@ -5549,7 +5644,11 @@ function estornarBaixa(id) {
   renderPagamentos();
   renderDashboard();
   _saveSyncRunning = true;
-  syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
+  apiCall('PUT', 'payments/' + id, pagamentos[idx]).then(r => {
+    _saveSyncRunning = false;
+  }).catch(() => {
+    syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
+  });
 }
 
 // ===================== DASHBOARD =====================
@@ -6224,6 +6323,20 @@ function csrfHeaders() {
   return h;
 }
 
+async function apiCall(method, path, body) {
+  await getCsrfToken();
+  const opts = { method, headers: csrfHeaders() };
+  if (body && method !== 'GET') opts.body = JSON.stringify({ ...body, csrf_token: csrfToken });
+  const r = await fetch('/api/' + path, opts);
+  if (r.status === 401) {
+    sessionStorage.removeItem('logged_in');
+    mostrarToast('Sessao expirada. Faca login novamente.', 'erro');
+    mostrarLogin();
+    return null;
+  }
+  return r.json();
+}
+
 // ─── TEMA CLARO/ESCURO ─────────────────────────────────
 function toggleTema() {
   const html = document.documentElement;
@@ -6824,6 +6937,47 @@ function syncRealtime() {
 }
 setInterval(syncRealtime, 30000);
 setInterval(() => { if (_pendingSync && !_syncRunning && !_saveSyncRunning) syncRealtime(); }, 10000);
+</script>
+<script>
+(function() {
+  const SUPABASE_URL = 'https://ljuvafbnvxxwuvyfapwm.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqdXZhZmJudnh4d3V2eWZhcHdtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5MjM5NzgsImV4cCI6MjEwMjQ5OTk3OH0.xW-ZERpdQ6n6X6UyCk6h-oxZ_c1355_mDeGhhEx3a5w';
+
+  if (!window.supabase || !window.supabase.createClient) {
+    console.error('[REALTIME] supabase-js não carregado');
+    return;
+  }
+
+  const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  let _rtDebounce = null;
+
+  function onRealtimeChange(payload) {
+    if (_saveSyncRunning || _syncRunning) return;
+    clearTimeout(_rtDebounce);
+    _rtDebounce = setTimeout(() => {
+      console.log('[REALTIME] Mudanca detectada:', payload.eventType, payload.table);
+      const indicator = document.getElementById('sync-indicator');
+      if (indicator) { indicator.style.display = 'inline'; indicator.style.color = '#0af'; indicator.textContent = '● Atualizando...'; }
+      loadFromServer().then(() => {
+        if (indicator) { indicator.style.color = '#8f8'; indicator.textContent = '● Atualizado'; setTimeout(() => { indicator.style.display = 'none'; }, 2000); }
+      }).catch(() => {
+        if (indicator) { indicator.style.display = 'none'; }
+      });
+    }, 500);
+  }
+
+  const tables = ['contracts', 'payments', 'certidoes', 'licitacoes', 'additives', 'users', 'sectors', 'companies', 'destinatarios'];
+  tables.forEach(t => {
+    client.channel('db-' + t)
+      .on('postgres_changes', { event: '*', schema: 'public', table: t }, onRealtimeChange)
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') console.log('[REALTIME] Conectado a tabela:', t);
+        if (status === 'CHANNEL_ERROR') console.error('[REALTIME] Erro na tabela:', t);
+      });
+  });
+
+  console.log('[REALTIME] Assinaturas Realtime iniciadas para', tables.length, 'tabelas');
+})();
 </script>
 </body>
 </html>
