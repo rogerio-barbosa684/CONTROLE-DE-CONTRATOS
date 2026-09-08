@@ -3979,9 +3979,17 @@ async function salvarCertidao() {
 
   const savedId = editId || certidoes[certidoes.length - 1].id;
   const certData = certidoes.find(c => c.id === savedId);
+  const payload = {
+    id: certData.id, empresa_id: certData.empresaId || '',
+    cnpj: certData.cnpj || '', uf: certData.uf || '', cidade: certData.cidade || '',
+    tipo: certData.tipo || '', data_emissao: certData.dataEmissao || '',
+    data_validade: certData.dataValidade || '', status: certData.status || 'pendente',
+    arquivo_nome: certData.arquivo?.name || '', arquivo_dados: certData.arquivo?.data || '',
+    obs: certData.obs || ''
+  };
   const method = editId ? 'PUT' : 'POST';
   const path = editId ? 'certidoes/' + savedId : 'certidoes';
-  apiCall(method, path, certData).then(r => {
+  apiCall(method, path, payload).then(r => {
     mostrarToast(r && r.ok ? 'Certidão salva e sincronizada!' : 'Certidão salva localmente.', r && r.ok ? 'sucesso' : 'info');
   }).catch(() => {
     syncToServer().then(() => {
@@ -3999,7 +4007,7 @@ function excluirCertidao(id) {
   if (idx !== -1) { certidoes[idx].deleted_at = now(); certidoes[idx].updated_at = now(); }
   saveCertidoes(certidoes);
   renderCertidoes();
-  apiCall('PUT', 'certidoes/' + id, certidoes[idx]).catch(() => {
+  apiCall('PUT', 'certidoes/' + id, { deleted_at: certidoes[idx].deleted_at, updated_at: certidoes[idx].updated_at }).catch(() => {
     syncToServer().catch(() => {});
   });
   mostrarToast('Certidão excluída.', 'sucesso');
@@ -4203,9 +4211,18 @@ async function salvarLicitacao() {
 
   const savedId = editId || licitacoes[licitacoes.length - 1].id;
   const lcData = licitacoes.find(l => l.id === savedId);
+  const payload = {
+    id: lcData.id, numero_licitacao: lcData.numeroLicitacao || '', edital: lcData.edital || '',
+    objeto: lcData.objeto || '', empresa_id: lcData.empresaId || '',
+    contrato_id: lcData.contratoId || '', valor: lcData.valor || 0,
+    data_homologacao: lcData.dataHomologacao || '', data_inicio: lcData.dataInicio || '',
+    data_fim: lcData.dataFim || '', status: lcData.status || 'em_andamento',
+    arquivos: JSON.stringify(lcData.arquivos || []), obs: lcData.obs || '',
+    nome_licitacao: lcData.nomeLicitacao || '', cnpj: lcData.cnpj || ''
+  };
   const method = editId ? 'PUT' : 'POST';
   const path = editId ? 'licitacoes/' + savedId : 'licitacoes';
-  apiCall(method, path, lcData).then(r => {
+  apiCall(method, path, payload).then(r => {
     mostrarToast(r && r.ok ? 'Licitação salva e sincronizada!' : 'Licitação salva localmente.', r && r.ok ? 'sucesso' : 'info');
   }).catch(() => {
     syncToServer().then(() => {
@@ -4226,7 +4243,7 @@ function excluirLicitacao(id) {
   if (idx !== -1) { licitacoes[idx].deleted_at = now(); licitacoes[idx].updated_at = now(); }
   saveLicitacoes(licitacoes);
   renderLicitacoes();
-  apiCall('PUT', 'licitacoes/' + id, licitacoes[idx]).catch(() => {
+  apiCall('PUT', 'licitacoes/' + id, { deleted_at: licitacoes[idx].deleted_at, updated_at: licitacoes[idx].updated_at }).catch(() => {
     syncToServer().catch(() => {});
   });
   mostrarToast('Licitação excluída.', 'sucesso');
@@ -4241,7 +4258,7 @@ function inativarLicitacao(id) {
   saveLicitacoes(licitacoes);
   renderLicitacoes();
   renderDashboard();
-  apiCall('PUT', 'licitacoes/' + id, l).catch(() => {
+  apiCall('PUT', 'licitacoes/' + id, { status: l.status, updated_at: l.updated_at }).catch(() => {
     syncToServer().catch(() => {});
   });
   mostrarToast(`Licitação ${l.status === 'em_andamento' ? 'reativada' : 'concluída'} com sucesso.`, 'sucesso');
@@ -4337,7 +4354,7 @@ async function adicionarArquivoLicitacao() {
     if (idx !== -1) {
       licitacoes[idx].arquivos = _licitacaoArquivosTemp;
       saveLicitacoes(licitacoes);
-      apiCall('PUT', 'licitacoes/' + editId, licitacoes[idx]).catch(() => {
+      apiCall('PUT', 'licitacoes/' + editId, { arquivos: JSON.stringify(_licitacaoArquivosTemp) }).catch(() => {
         syncToServer().catch(() => {});
       });
     }
@@ -4355,7 +4372,7 @@ function removerArquivoLicitacao(idx) {
     if (licIdx !== -1) {
       licitacoes[licIdx].arquivos = _licitacaoArquivosTemp;
       saveLicitacoes(licitacoes);
-      apiCall('PUT', 'licitacoes/' + editId, licitacoes[licIdx]).catch(() => {
+      apiCall('PUT', 'licitacoes/' + editId, { arquivos: JSON.stringify(_licitacaoArquivosTemp) }).catch(() => {
         syncToServer().catch(() => {});
       });
     }
