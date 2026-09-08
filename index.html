@@ -3818,7 +3818,7 @@ function renderCertidoes(page) {
     const stLabel = { valida: 'Válida', vencida: 'Vencida', vencendo: 'Vencendo', pendente: 'Pendente' }[st];
     const stClass = { valida: 'badge-valida', vencida: 'badge-vencido', vencendo: 'badge-pendente', pendente: 'badge-pendente' }[st];
     const arq = c.arquivo;
-    const arqBtn = arq ? `<button class="btn btn-sm btn-primary" onclick="previewAnexo('${arquivoData(c)}','${escapeHtml(arq.name || 'arquivo')}')" style="padding:2px 8px;font-size:0.75rem;">Ver</button>` : '—';
+    const arqBtn = arq ? `<button class="btn btn-sm btn-primary" onclick="previewAnexo('${arquivoData(c)}','${escapeHtml(arq.name || 'arquivo')}')" style="padding:2px 8px;font-size:0.75rem;">Ver</button><span style="font-size:0.7rem;color:#888;margin-left:4px;">${c.updated_at ? fmtData(c.updated_at.slice(0,10)) : ''}</span>` : '—';
     return `<tr>
       <td>${escapeHtml(emp?.nome || '—')}</td>
       <td>${c.cnpj || '—'}</td>
@@ -3946,7 +3946,6 @@ async function salvarCertidao() {
   let arquivo = null;
   if (arquivoInput.files && arquivoInput.files[0]) {
     arquivo = await fileToBase64(arquivoInput.files[0]);
-    arquivo = { name: arquivoInput.files[0].name, data: arquivo };
   }
 
   const certidoes = getCertidoes();
@@ -3984,7 +3983,7 @@ async function salvarCertidao() {
     cnpj: certData.cnpj || '', uf: certData.uf || '', cidade: certData.cidade || '',
     tipo: certData.tipo || '', data_emissao: certData.dataEmissao || '',
     data_validade: certData.dataValidade || '', status: certData.status || 'pendente',
-    arquivo_nome: certData.arquivo?.name || '', arquivo_dados: certData.arquivo?.data || '',
+    arquivo_nome: certData.arquivo?.name || '', arquivo_dados: certData.arquivo ? JSON.stringify(certData.arquivo) : '',
     obs: certData.obs || ''
   };
   const method = editId ? 'PUT' : 'POST';
