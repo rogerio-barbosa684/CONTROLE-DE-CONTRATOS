@@ -3818,7 +3818,7 @@ function renderCertidoes(page) {
     const stLabel = { valida: 'Válida', vencida: 'Vencida', vencendo: 'Vencendo', pendente: 'Pendente' }[st];
     const stClass = { valida: 'badge-valida', vencida: 'badge-vencido', vencendo: 'badge-pendente', pendente: 'badge-pendente' }[st];
     const arq = c.arquivo;
-    const arqBtn = arq ? `<button class="btn btn-sm btn-primary" onclick="previewAnexo('${arquivoData(c)}','${escapeHtml(arq.name || 'arquivo')}')" style="padding:2px 8px;font-size:0.75rem;">Ver</button><span style="font-size:0.7rem;color:#888;margin-left:4px;">${c.updated_at ? fmtData(c.updated_at.slice(0,10)) : ''}</span>` : '—';
+    const arqBtn = arq ? `<button class="btn btn-sm btn-primary" onclick="previewCertidaoArquivo('${c.id}')" style="padding:2px 8px;font-size:0.75rem;">Ver</button><span style="font-size:0.7rem;color:#888;margin-left:4px;">${c.updated_at ? fmtData(c.updated_at.slice(0,10)) : ''}</span>` : '—';
     return `<tr>
       <td>${escapeHtml(emp?.nome || '—')}</td>
       <td>${c.cnpj || '—'}</td>
@@ -3840,6 +3840,11 @@ function renderCertidoes(page) {
 function arquivoData(obj) {
   if (!obj || !obj.data) return '';
   return obj.data.replace(/'/g, "\\'");
+}
+
+window.previewCertidaoArquivo = function(id) {
+  const c = getCertidoes().find(x => x.id === id);
+  if (c && c.arquivo && c.arquivo.data) previewAnexo(c.arquivo.data, c.arquivo.name || 'arquivo');
 }
 
 function popularFiltroEmpresaCertidoes() {
