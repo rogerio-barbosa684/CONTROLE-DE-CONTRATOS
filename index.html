@@ -4887,13 +4887,19 @@ async function salvarContrato() {
       if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao criar contrato');
     }
     const pays = getPagamentos().filter(p => p.contratoId === contractId);
+    let payErrors = 0;
     for (const p of pays) {
-      if (p.deleted_at) {
-        await apiCall('PUT', 'payments/' + p.id, { deleted_at: p.deleted_at, status: 'cancelado' });
-      } else if (!existingPaymentIds.includes(p.id)) {
-        await apiCall('POST', 'payments', p);
-      }
+      try {
+        if (p.deleted_at) {
+          const r = await apiCall('PUT', 'payments/' + p.id, { deleted_at: p.deleted_at, status: 'cancelado' });
+          if (!r || !r.ok) payErrors++;
+        } else if (!existingPaymentIds.includes(p.id)) {
+          const r = await apiCall('POST', 'payments', p);
+          if (!r || !r.ok) { payErrors++; console.error('[PUSH] Erro ao salvar pagamento:', p.id, r?.erro); }
+        }
+      } catch(e) { payErrors++; console.error('[PUSH] Excecao ao salvar pagamento:', p.id, e.message); }
     }
+    if (payErrors > 0) throw new Error(payErrors + ' pagamento(s) falharam no push');
   }
 
   pushContrato().then(() => {

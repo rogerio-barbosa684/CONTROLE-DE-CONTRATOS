@@ -1289,6 +1289,8 @@ export async function handler(event) {
       if (!numero) return json({ ok: false, erro: 'Numero do contrato e obrigatorio.' }, 400)
       const { data: existing } = await getSupabase().from('contracts').select('id').eq('id', cid).single()
       if (existing) return json({ ok: false, erro: 'Contrato ja existe com este ID.' }, 400)
+      const { data: dupNumero } = await getSupabase().from('contracts').select('id').eq('numero', numero).is('deleted_at', null).maybeSingle()
+      if (dupNumero) return json({ ok: false, erro: 'Ja existe um contrato com este numero.', contratoExistente: dupNumero.id }, 400)
       const arquivoJson = body.arquivo ? JSON.stringify(body.arquivo) : null
       const pgtoConfig = body.pgtoConfig || {}
       const vals = {
@@ -1598,6 +1600,8 @@ export async function handler(event) {
               }
             } else {
               if (incomingDeleted) { importados.contratos++; continue }
+              const { data: dupNum } = await getSupabase().from('contracts').select('id').eq('numero', numero).is('deleted_at', null).maybeSingle()
+              if (dupNum) { importados.ignorados++; continue }
               const vals = {
                 numero, fornecedor: (c.parte || '').trim(), cnpj: (c.doc || '').trim(),
                 objeto: (c.objeto || '').trim(), valor_total: parseFloat(c.valor || 0),
