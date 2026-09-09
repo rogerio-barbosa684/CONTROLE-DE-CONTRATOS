@@ -6973,28 +6973,37 @@ setInterval(() => { if (_pendingSync && !_syncRunning && !_saveSyncRunning) sync
   let _rtDebounce = null;
 
   function onRealtimeChange(payload) {
-    if (_saveSyncRunning || _syncRunning) return;
     clearTimeout(_rtDebounce);
     _rtDebounce = setTimeout(() => {
       console.log('[REALTIME] Mudanca detectada:', payload.eventType, payload.table);
+      if (typeof _saveSyncRunning !== 'undefined' && _saveSyncRunning) { console.log('[REALTIME] Pulando: save em andamento'); return; }
+      if (typeof _syncRunning !== 'undefined' && _syncRunning) { console.log('[REALTIME] Pulando: sync em andamento'); return; }
       const indicator = document.getElementById('sync-indicator');
       if (indicator) { indicator.style.display = 'inline'; indicator.style.color = '#0af'; indicator.textContent = '● Atualizando...'; }
       loadFromServer().then(() => {
         if (indicator) { indicator.style.color = '#8f8'; indicator.textContent = '● Atualizado'; setTimeout(() => { indicator.style.display = 'none'; }, 2000); }
-      }).catch(() => {
+        renderContratos && renderContratos();
+        renderPagamentos && renderPagamentos();
+        renderDashboard && renderDashboard();
+        renderCertidoes && renderCertidoes();
+        renderLicitacoes && renderLicitacoes();
+      }).catch((e) => {
+        console.error('[REALTIME] Erro loadFromServer:', e);
         if (indicator) { indicator.style.display = 'none'; }
       });
     }, 500);
   }
 
   const tables = ['contracts', 'payments', 'certidoes', 'licitacoes', 'additives', 'users', 'sectors', 'companies', 'destinatarios'];
+  const channel = client.channel('db-changes');
   tables.forEach(t => {
-    client.channel('db-' + t)
-      .on('postgres_changes', { event: '*', schema: 'public', table: t }, onRealtimeChange)
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') console.log('[REALTIME] Conectado a tabela:', t);
-        if (status === 'CHANNEL_ERROR') console.error('[REALTIME] Erro na tabela:', t);
-      });
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: t }, onRealtimeChange);
+  });
+  channel.subscribe((status) => {
+    console.log('[REALTIME] Status do canal:', status);
+    if (status === 'SUBSCRIBED') console.log('[REALTIME] Conectado! Escutando mudancas em', tables.length, 'tabelas');
+    if (status === 'CHANNEL_ERROR') console.error('[REALTIME] Erro ao conectar canal');
+    if (status === 'TIMED_OUT') console.error('[REALTIME] Timeout ao conectar');
   });
 
   console.log('[REALTIME] Assinaturas Realtime iniciadas para', tables.length, 'tabelas');
