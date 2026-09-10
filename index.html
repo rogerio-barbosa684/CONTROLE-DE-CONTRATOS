@@ -981,7 +981,7 @@
       <div class="form-grid">
         <div class="form-group">
           <label>Nº do Contrato *</label>
-          <input type="text" id="f-numero" placeholder="Ex: CT-2024-001" oninput="toUpper(this)"/>
+          <input type="text" id="f-numero" placeholder="Ex: 001/2026" oninput="toUpper(this)"/>
         </div>
         <div class="form-group">
           <label>Tipo</label>
@@ -2232,7 +2232,6 @@ function mostrarApp(user) {
     if (ddSistema) ddSistema.style.display = 'none';
   }
   loadDataFromDB();
-  setTimeout(() => { syncRealtime(); }, 2000);
 }
 
 function mostrarLogin() {
@@ -2451,8 +2450,7 @@ function loadDataFromDB() {
       }
 
       showPage('dashboard', document.querySelector('nav button'));
-      loadFromServer();
-      setTimeout(() => { syncToServer(); }, 2000);
+      loadFromServer().then(() => syncToServer()).catch(e => console.error('[SYNC] Erro no sync inicial:', e));
     });
   });
 }
@@ -2520,7 +2518,6 @@ function saveDestinatarios(arr, skipSync) {
     t.objectStore("destinatarios").clear();
     arr.forEach(a => t.objectStore("destinatarios").put(a));
   } catch (e) { console.error('[DB] saveDestinatarios erro:', e.message); }
-  if (!skipSync) syncToServer().catch(() => {});
 }
 
 function getSectors() { return cachedSectors; }
@@ -3350,9 +3347,13 @@ function loadFromServer() {
       mostrarLogin();
       return null;
     }
+    if (!r.ok) {
+      console.error('[SYNC-GET] Erro HTTP:', r.status);
+      throw new Error('Servidor retornou erro ' + r.status);
+    }
     return r.json();
   }).then(data => {
-    if (!data || !data.contratos) return;
+    if (!data) return;
     console.log('[SYNC-GET] Recebidos:', data.contratos?.length || 0, 'contratos,', data.pagamentos?.length || 0, 'pagamentos (full)');
     const aditivosPorContrato = {};
     (data.aditivos || []).forEach(a => {
@@ -3456,6 +3457,9 @@ function loadFromServer() {
     setTimeout(checkNotificacoes, 500);
   }).catch(e => {
     console.error('[SYNC] loadFromServer falhou:', e);
+    const indicator = document.getElementById('sync-indicator');
+    if (indicator) { indicator.style.display = 'inline'; indicator.style.color = '#f66'; indicator.textContent = '● Falha ao sincronizar - retentando...'; }
+    _pendingSync = true;
   });
 }
 
@@ -3953,68 +3957,68 @@ async function salvarCertidao() {
     arquivo = await fileToBase64(arquivoInput.files[0]);
   }
 
-  const certidoes = getCertidoes();
   const editId = document.getElementById('mc-id').value;
+  const certidoes = getCertidoes();
+  const snapshot = JSON.parse(JSON.stringify(certidoes));
 
+  let certObj;
   if (editId) {
     const idx = certidoes.findIndex(c => c.id === editId);
-    if (idx !== -1) {
-      certidoes[idx].empresaId = empresaId;
-      certidoes[idx].cnpj = cnpj;
-      certidoes[idx].uf = uf;
-      certidoes[idx].cidade = cidade;
-      certidoes[idx].tipo = tipo;
-      certidoes[idx].dataEmissao = dataEmissao;
-      certidoes[idx].dataValidade = dataValidade;
-      certidoes[idx].status = status;
-      certidoes[idx].obs = obs;
-      certidoes[idx].updated_at = now();
-      if (arquivo) certidoes[idx].arquivo = arquivo;
-    }
+    if (idx === -1) return;
+    certObj = { ...certidoes[idx], empresaId, cnpj, uf, cidade, tipo, dataEmissao, dataValidade, status, obs, updated_at: now() };
+    if (arquivo) certObj.arquivo = arquivo;
   } else {
-    certidoes.push({
+    certObj = {
       id: uid(), empresaId, cnpj, uf, cidade, tipo, dataEmissao, dataValidade,
       status, arquivo, obs, criadoEm: now(), updated_at: now()
-    });
+    };
   }
-  saveCertidoes(certidoes);
-  renderCertidoes();
-  fecharModal('modal-certidao');
 
-  const savedId = editId || certidoes[certidoes.length - 1].id;
-  const certData = certidoes.find(c => c.id === savedId);
   const payload = {
-    id: certData.id, empresa_id: certData.empresaId || '',
-    cnpj: certData.cnpj || '', uf: certData.uf || '', cidade: certData.cidade || '',
-    tipo: certData.tipo || '', data_emissao: certData.dataEmissao || '',
-    data_validade: certData.dataValidade || '', status: certData.status || 'pendente',
-    arquivo_nome: certData.arquivo?.name || '', arquivo_dados: certData.arquivo ? JSON.stringify(certData.arquivo) : '',
-    obs: certData.obs || ''
+    id: certObj.id, empresa_id: certObj.empresaId || '',
+    cnpj: certObj.cnpj || '', uf: certObj.uf || '', cidade: certObj.cidade || '',
+    tipo: certObj.tipo || '', data_emissao: certObj.dataEmissao || '',
+    data_validade: certObj.dataValidade || '', status: certObj.status || 'pendente',
+    arquivo_nome: certObj.arquivo?.name || '', arquivo_dados: certObj.arquivo ? JSON.stringify(certObj.arquivo) : '',
+    obs: certObj.obs || ''
   };
   const method = editId ? 'PUT' : 'POST';
-  const path = editId ? 'certidoes/' + savedId : 'certidoes';
-  apiCall(method, path, payload).then(r => {
-    mostrarToast(r && r.ok ? 'Certidão salva e sincronizada!' : 'Certidão salva localmente.', r && r.ok ? 'sucesso' : 'info');
-  }).catch(() => {
-    syncToServer().then(() => {
-      mostrarToast('Certidão salva e sincronizada!', 'sucesso');
-    }).catch(() => {
-      mostrarToast('Certidão salva localmente.', 'info');
-    });
-  });
+  const path = editId ? 'certidoes/' + editId : 'certidoes';
+  try {
+    const r = await apiCall(method, path, payload);
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao salvar certidao');
+    if (editId) {
+      const idx = certidoes.findIndex(c => c.id === editId);
+      if (idx !== -1) certidoes[idx] = { ...certidoes[idx], ...certObj };
+    } else {
+      certidoes.push(certObj);
+    }
+    saveCertidoes(certidoes);
+    renderCertidoes();
+    fecharModal('modal-certidao');
+    mostrarToast('Certidao salva com sucesso!', 'sucesso');
+  } catch (e) {
+    saveCertidoes(snapshot);
+    renderCertidoes();
+    mostrarToast('Erro ao salvar certidao: ' + e.message, 'erro');
+  }
 }
 
-function excluirCertidao(id) {
-  if (!confirm('Excluir esta certidão?')) return;
-  const certidoes = getCertidoes();
-  const idx = certidoes.findIndex(c => c.id === id);
-  if (idx !== -1) { certidoes[idx].deleted_at = now(); certidoes[idx].updated_at = now(); }
-  saveCertidoes(certidoes);
-  renderCertidoes();
-  apiCall('PUT', 'certidoes/' + id, { deleted_at: certidoes[idx].deleted_at, updated_at: certidoes[idx].updated_at }).catch(() => {
-    syncToServer().catch(() => {});
-  });
-  mostrarToast('Certidão excluída.', 'sucesso');
+async function excluirCertidao(id) {
+  if (!confirm('Excluir esta certidao?')) return;
+  const ts = now();
+  try {
+    const r = await apiCall('PUT', 'certidoes/' + id, { deleted_at: ts, updated_at: ts });
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao excluir certidao');
+    const certidoes = getCertidoes();
+    const idx = certidoes.findIndex(c => c.id === id);
+    if (idx !== -1) { certidoes[idx].deleted_at = ts; certidoes[idx].updated_at = ts; }
+    saveCertidoes(certidoes);
+    renderCertidoes();
+    mostrarToast('Certidao excluida com sucesso!', 'sucesso');
+  } catch (e) {
+    mostrarToast('Erro ao excluir certidao: ' + e.message, 'erro');
+  }
 }
 
 // ===================== LICITACOES =====================
@@ -4165,7 +4169,7 @@ async function salvarLicitacao() {
   const numero = document.getElementById('ml-numero').value.trim();
   const objeto = document.getElementById('ml-objeto').value.trim();
   if (!numero || !objeto) {
-    mostrarToast('Preencha Nº Licitação e Objeto.', 'erro'); return;
+    mostrarToast('Preencha No Licitacao e Objeto.', 'erro'); return;
   }
   const nomeLicitacao = document.getElementById('ml-nome').value.trim();
   const cnpj = document.getElementById('ml-cnpj').value.trim();
@@ -4179,93 +4183,92 @@ async function salvarLicitacao() {
   const status = document.getElementById('ml-status').value;
   const obs = document.getElementById('ml-obs').value;
 
-  const licitacoes = getLicitacoes();
   const editId = document.getElementById('ml-id').value;
+  const licitacoes = getLicitacoes();
+  const snapshot = JSON.parse(JSON.stringify(licitacoes));
 
+  let lcObj;
   if (editId) {
     const idx = licitacoes.findIndex(l => l.id === editId);
-    if (idx !== -1) {
-      licitacoes[idx].numeroLicitacao = numero;
-      licitacoes[idx].nomeLicitacao = nomeLicitacao;
-      licitacoes[idx].cnpj = cnpj;
-      licitacoes[idx].edital = edital;
-      licitacoes[idx].objeto = objeto;
-      licitacoes[idx].empresaId = empresaId;
-      licitacoes[idx].contratoId = contratoId;
-      licitacoes[idx].valor = valor;
-      licitacoes[idx].dataHomologacao = dataHomologacao;
-      licitacoes[idx].dataInicio = dataInicio;
-      licitacoes[idx].dataFim = dataFim;
-      licitacoes[idx].status = status;
-      licitacoes[idx].obs = obs;
-      licitacoes[idx].resumo = licitacoes[idx].resumo || null;
-      licitacoes[idx].updated_at = now();
-    }
+    if (idx === -1) return;
+    lcObj = { ...licitacoes[idx], numeroLicitacao: numero, nomeLicitacao, cnpj, edital, objeto, empresaId, contratoId, valor, dataHomologacao, dataInicio, dataFim, status, obs, updated_at: now() };
   } else {
-    licitacoes.push({
+    lcObj = {
       id: uid(), numeroLicitacao: numero, nomeLicitacao, cnpj, edital, objeto,
-      empresaId, contratoId, valor, dataHomologacao,
-      dataInicio, dataFim, status, arquivos: [], resumo: null,
+      empresaId, contratoId, valor, dataHomologacao, dataInicio, dataFim, status, arquivos: [], resumo: null,
       obs, criadoEm: now(), updated_at: now()
-    });
+    };
   }
-  saveLicitacoes(licitacoes);
-  renderLicitacoes();
-  fecharModal('modal-licitacao');
 
-  const savedId = editId || licitacoes[licitacoes.length - 1].id;
-  const lcData = licitacoes.find(l => l.id === savedId);
   const payload = {
-    id: lcData.id, numero_licitacao: lcData.numeroLicitacao || '', edital: lcData.edital || '',
-    objeto: lcData.objeto || '', empresa_id: lcData.empresaId || '',
-    contrato_id: lcData.contratoId || '', valor: lcData.valor || 0,
-    data_homologacao: lcData.dataHomologacao || '', data_inicio: lcData.dataInicio || '',
-    data_fim: lcData.dataFim || '', status: lcData.status || 'em_andamento',
-    arquivos: JSON.stringify(lcData.arquivos || []), obs: lcData.obs || '',
-    nome_licitacao: lcData.nomeLicitacao || '', cnpj: lcData.cnpj || ''
+    id: lcObj.id, numero_licitacao: lcObj.numeroLicitacao || '', edital: lcObj.edital || '',
+    objeto: lcObj.objeto || '', empresa_id: lcObj.empresaId || '',
+    contrato_id: lcObj.contratoId || '', valor: lcObj.valor || 0,
+    data_homologacao: lcObj.dataHomologacao || '', data_inicio: lcObj.dataInicio || '',
+    data_fim: lcObj.dataFim || '', status: lcObj.status || 'em_andamento',
+    arquivos: JSON.stringify(lcObj.arquivos || []), obs: lcObj.obs || '',
+    nome_licitacao: lcObj.nomeLicitacao || '', cnpj: lcObj.cnpj || ''
   };
   const method = editId ? 'PUT' : 'POST';
-  const path = editId ? 'licitacoes/' + savedId : 'licitacoes';
-  apiCall(method, path, payload).then(r => {
-    mostrarToast(r && r.ok ? 'Licitação salva e sincronizada!' : 'Licitação salva localmente.', r && r.ok ? 'sucesso' : 'info');
-  }).catch(() => {
-    syncToServer().then(() => {
-      mostrarToast('Licitação salva e sincronizada!', 'sucesso');
-    }).catch(() => {
-      mostrarToast('Licitação salva localmente.', 'info');
-    });
-  });
-}
-
-function excluirLicitacao(id) {
-  if (typeof currentUser === 'undefined' || !currentUser || currentUser.role !== 'admin') {
-    mostrarToast('Apenas o administrador pode excluir licitações.', 'erro'); return;
+  const path = editId ? 'licitacoes/' + editId : 'licitacoes';
+  try {
+    const r = await apiCall(method, path, payload);
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao salvar licitacao');
+    if (editId) {
+      const idx = licitacoes.findIndex(l => l.id === editId);
+      if (idx !== -1) licitacoes[idx] = { ...licitacoes[idx], ...lcObj };
+    } else {
+      licitacoes.push(lcObj);
+    }
+    saveLicitacoes(licitacoes);
+    renderLicitacoes();
+    fecharModal('modal-licitacao');
+    mostrarToast('Licitacao salva com sucesso!', 'sucesso');
+  } catch (e) {
+    saveLicitacoes(snapshot);
+    renderLicitacoes();
+    mostrarToast('Erro ao salvar licitacao: ' + e.message, 'erro');
   }
-  if (!confirm('Excluir esta licitação?')) return;
-  const licitacoes = getLicitacoes();
-  const idx = licitacoes.findIndex(l => l.id === id);
-  if (idx !== -1) { licitacoes[idx].deleted_at = now(); licitacoes[idx].updated_at = now(); }
-  saveLicitacoes(licitacoes);
-  renderLicitacoes();
-  apiCall('PUT', 'licitacoes/' + id, { deleted_at: licitacoes[idx].deleted_at, updated_at: licitacoes[idx].updated_at }).catch(() => {
-    syncToServer().catch(() => {});
-  });
-  mostrarToast('Licitação excluída.', 'sucesso');
 }
 
-function inativarLicitacao(id) {
+async function excluirLicitacao(id) {
+  if (typeof currentUser === 'undefined' || !currentUser || currentUser.role !== 'admin') {
+    mostrarToast('Apenas o administrador pode excluir licitacoes.', 'erro'); return;
+  }
+  if (!confirm('Excluir esta licitacao?')) return;
+  const ts = now();
+  try {
+    const r = await apiCall('PUT', 'licitacoes/' + id, { deleted_at: ts, updated_at: ts });
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao excluir licitacao');
+    const licitacoes = getLicitacoes();
+    const idx = licitacoes.findIndex(l => l.id === id);
+    if (idx !== -1) { licitacoes[idx].deleted_at = ts; licitacoes[idx].updated_at = ts; }
+    saveLicitacoes(licitacoes);
+    renderLicitacoes();
+    mostrarToast('Licitacao excluida com sucesso!', 'sucesso');
+  } catch (e) {
+    mostrarToast('Erro ao excluir licitacao: ' + e.message, 'erro');
+  }
+}
+
+async function inativarLicitacao(id) {
   const licitacoes = getLicitacoes();
   const l = licitacoes.find(x => x.id === id);
   if (!l) return;
-  l.status = (l.status === 'em_andamento') ? 'concluido' : 'em_andamento';
-  l.updated_at = now();
-  saveLicitacoes(licitacoes);
-  renderLicitacoes();
-  renderDashboard();
-  apiCall('PUT', 'licitacoes/' + id, { status: l.status, updated_at: l.updated_at }).catch(() => {
-    syncToServer().catch(() => {});
-  });
-  mostrarToast(`Licitação ${l.status === 'em_andamento' ? 'reativada' : 'concluída'} com sucesso.`, 'sucesso');
+  const newStatus = (l.status === 'em_andamento') ? 'concluido' : 'em_andamento';
+  const ts = now();
+  try {
+    const r = await apiCall('PUT', 'licitacoes/' + id, { status: newStatus, updated_at: ts });
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao atualizar licitacao');
+    l.status = newStatus;
+    l.updated_at = ts;
+    saveLicitacoes(licitacoes);
+    renderLicitacoes();
+    renderDashboard();
+    mostrarToast(`Licitacao ${newStatus === 'em_andamento' ? 'reativada' : 'concluida'} com sucesso.`, 'sucesso');
+  } catch (e) {
+    mostrarToast('Erro ao atualizar licitacao: ' + e.message, 'erro');
+  }
 }
 
 function abrirDetalheLicitacao(id) {
@@ -4664,8 +4667,23 @@ function atualizarSaldoParcelasManuais() {
   }
 }
 
+function gerarNumeroContrato() {
+  const contratos = getContratos();
+  const anoAtual = new Date().getFullYear();
+  let maiorSeq = 0;
+  for (const c of contratos) {
+    const match = String(c.numero || '').match(/^(\d{1,5})\/(\d{4})$/);
+    if (match && parseInt(match[2]) === anoAtual) {
+      const seq = parseInt(match[1]);
+      if (seq > maiorSeq) maiorSeq = seq;
+    }
+  }
+  const proximaSeq = String(maiorSeq + 1).padStart(3, '0');
+  return `${proximaSeq}/${anoAtual}`;
+}
+
 function limparFormContrato() {
-  ['f-numero','f-objeto','f-parte','f-doc','f-valor','f-inicio',
+  ['f-objeto','f-parte','f-doc','f-valor','f-inicio',
    'f-fim','f-responsavel','f-setor','f-obs','f-qtd-parcelas',
    'f-dia-venc','f-valor-parcela'].forEach(id => {
     const el = document.getElementById(id);
@@ -4682,10 +4700,11 @@ function limparFormContrato() {
   renderParcelasManuais();
   document.getElementById('secao-parcelas-manuais').style.display = 'none';
   atualizarCamposParcela();
+  document.getElementById('f-numero').value = gerarNumeroContrato();
 }
 
 async function salvarContrato() {
-  if (_saveSyncRunning) { mostrarToast('Aguarde, já há um salvamento em andamento...', 'info'); return; }
+  if (_saveSyncRunning) { mostrarToast('Aguarde, ja ha um salvamento em andamento...', 'info'); return; }
   const numero = document.getElementById('f-numero').value.trim();
   const objeto = document.getElementById('f-objeto').value.trim();
   const parte  = document.getElementById('f-parte').value.trim();
@@ -4694,7 +4713,7 @@ async function salvarContrato() {
   const fim    = document.getElementById('f-fim').value;
   const empresaId = document.getElementById('f-empresa').value || null;
   if (!numero || !objeto || !parte || !inicio || !fim || !empresaId) {
-    mostrarToast('Preencha todos os campos obrigatórios (*): Nº, Empresa, Objeto, Fornecedor, Início e Fim.', 'erro'); return;
+    mostrarToast('Preencha todos os campos obrigatorios (*): Numero, Empresa, Objeto, Fornecedor, Inicio e Fim.', 'erro'); return;
   }
 
   _saveSyncRunning = true;
@@ -4708,9 +4727,9 @@ async function salvarContrato() {
     arquivoB64 = await fileToBase64(_arquivoContrato);
   }
 
-  if (!window._editandoContrato && !arquivoB64) {
+  if (!editingId && !arquivoB64) {
     _saveSyncRunning = false;
-    mostrarToast('É obrigatório anexar o documento do contrato (PDF/Imagem).', 'erro'); return;
+    mostrarToast('E obrigatorio anexar o documento do contrato (PDF/Imagem).', 'erro'); return;
   }
 
   const temParcelas = document.getElementById('f-tem-parcelas').checked;
@@ -4725,152 +4744,16 @@ async function salvarContrato() {
   }
 
   const contratos = getContratos();
-
   const empIds = getLoggedUserEmpresaIds();
   if (empIds && empresaId && !empIds.includes(empresaId)) {
     _saveSyncRunning = false;
-    mostrarToast('Você não tem permissão para selecionar esta empresa.', 'erro'); return;
+    mostrarToast('Voce nao tem permissao para selecionar esta empresa.', 'erro'); return;
   }
 
-  if (window._editandoContrato) {
-    const idx = contratos.findIndex(c => c.id === window._editandoContrato);
-    if (idx !== -1) {
-      if (!arquivoB64) {
-        if (_arquivoContrato && !(_arquivoContrato instanceof File)) {
-          arquivoB64 = _arquivoContrato;
-        } else {
-          arquivoB64 = contratos[idx].arquivo;
-        }
-      }
-      contratos[idx] = { ...contratos[idx],
-        numero, objeto, parte, valor, inicio, fim,
-        tipo: document.getElementById('f-tipo').value,
-        empresaId: document.getElementById('f-empresa').value || null,
-        doc: document.getElementById('f-doc').value,
-        responsavel: document.getElementById('f-responsavel').value,
-        setor: document.getElementById('f-setor').value,
-        obs: document.getElementById('f-obs').value,
-        temParcelas, pgtoConfig, arquivo: arquivoB64,
-        aditivos: contratos[idx].aditivos || [],
-        updated_at: now()
-      };
-
-      // Regerar parcelas na edicao: preserva pagas, marca nao pagas como deletadas, cria novas
-      const pagamentos = getPagamentos();
-      const paidPayments = pagamentos.filter(p =>
-        p.contratoId === window._editandoContrato && p.dataPagamento !== null
-      );
-      const unpaidPayments = pagamentos.filter(p =>
-        p.contratoId === window._editandoContrato && p.dataPagamento === null
-      );
-      unpaidPayments.forEach(p => { p.deleted_at = now(); p.updated_at = now(); });
-      const otherPayments = pagamentos.filter(p =>
-        p.contratoId !== window._editandoContrato
-      );
-
-      if (temParcelas && pgtoConfig && pgtoConfig.forma === 'avulso') {
-        // Avulso com parcelas manuais: preserva pagas, insere novas parcelas manuais
-        const novasParcelasAvulso = _parcelasManuais.map(p => ({
-          id: uid(), contratoId: window._editandoContrato,
-          contratoNum: numero,
-          descricao: p.desc,
-          valor: p.valor,
-          vencimento: p.venc,
-          dataPagamento: null, valorPago: null, formaPgto: null,
-          obs: '', comprovante: null, status: 'pendente',
-          updated_at: now()
-        }));
-        savePagamentos(otherPayments.concat(paidPayments).concat(unpaidPayments).concat(novasParcelasAvulso));
-      } else if (temParcelas && pgtoConfig && pgtoConfig.forma !== 'avulso') {
-        const valorJaPago = paidPayments.reduce((s, p) => s + (p.valorPago || p.valor || 0), 0);
-        const saldoRestante = valor - valorJaPago;
-        const qtdNovaTotal = pgtoConfig.qtdParcelas;
-        const qtdPagas = paidPayments.length;
-        const qtdRestantes = Math.max(0, qtdNovaTotal - qtdPagas);
-
-        const novasParcelas = [];
-        if (qtdRestantes > 0 && saldoRestante > 0) {
-          const valorParcela = saldoRestante / qtdRestantes;
-          let inicioNovas = inicio;
-          if (paidPayments.length > 0) {
-            const lastDate = paidPayments.reduce((latest, p) =>
-              p.vencimento > latest ? p.vencimento : latest, '0000-00-00'
-            );
-            const d = new Date(lastDate + 'T12:00:00');
-            d.setMonth(d.getMonth() + 1);
-            inicioNovas = d.toISOString().slice(0, 10);
-          }
-          for (let i = 0; i < qtdRestantes; i++) {
-            const d = new Date(inicioNovas + 'T12:00:00');
-            d.setMonth(d.getMonth() + i);
-            novasParcelas.push({
-              id: uid(), contratoId: window._editandoContrato,
-              contratoNum: numero,
-              descricao: `Parcela ${qtdPagas + i + 1}/${qtdNovaTotal}`,
-              valor: Math.round(valorParcela * 100) / 100,
-              vencimento: d.toISOString().slice(0, 10),
-              dataPagamento: null, valorPago: null, formaPgto: null,
-              obs: '', comprovante: null, status: 'pendente',
-              updated_at: now()
-            });
-          }
-        }
-        savePagamentos(otherPayments.concat(paidPayments).concat(unpaidPayments).concat(novasParcelas));
-      } else {
-        // Sem parcelas: mantem so as pagas, marca nao pagas como deletadas
-        savePagamentos(otherPayments.concat(paidPayments).concat(unpaidPayments));
-      }
-    }
-    window._editandoContrato = null;
-  } else {
-    if (contratos.find(c => c.numero === numero)) {
-      _saveSyncRunning = false;
-      mostrarToast('Já existe um contrato com esse número.', 'erro'); return;
-    }
-    const contrato = {
-      id: uid(), numero, objeto, parte, valor, inicio, fim,
-      tipo: document.getElementById('f-tipo').value,
-      empresaId: document.getElementById('f-empresa').value || null,
-      doc: document.getElementById('f-doc').value,
-      responsavel: document.getElementById('f-responsavel').value,
-      setor: document.getElementById('f-setor').value,
-      obs: document.getElementById('f-obs').value,
-      temParcelas, pgtoConfig, arquivo: arquivoB64,
-      aditivos: [],
-      active: 1,
-      criadoEm: now(), updated_at: now()
-    };
-    contratos.push(contrato);
-
-    if (temParcelas && pgtoConfig && pgtoConfig.forma === 'avulso') {
-      const pagamentos = getPagamentos();
-      console.log('[AVULSO] _parcelasManuais:', JSON.parse(JSON.stringify(_parcelasManuais)));
-      for (const p of _parcelasManuais) {
-        pagamentos.push({
-          id: uid(), contratoId: contrato.id, contratoNum: contrato.numero,
-          descricao: p.desc,
-          valor: p.valor,
-          vencimento: p.venc,
-          dataPagamento: null, valorPago: null, formaPgto: null,
-          obs: '', comprovante: null, status: 'pendente',
-          updated_at: now()
-        });
-      }
-      console.log('[AVULSO] Total pagamentos a salvar:', pagamentos.length, 'Novas parcelas:', _parcelasManuais.length);
-      savePagamentos(pagamentos);
-    } else if (temParcelas && pgtoConfig && pgtoConfig.forma !== 'avulso') {
-      gerarParcelasAuto(contrato);
-    }
-  }
-
-  saveContratos(contratos);
-  mostrarToast('Salvando no servidor...', 'info');
-
-  const contractId = editingId || contratos[contratos.length - 1].id;
   const contractData = {
-    id: contractId, numero, objeto, parte, valor, inicio, fim,
+    numero, objeto, parte, valor, inicio, fim,
     tipo: document.getElementById('f-tipo').value,
-    empresaId: document.getElementById('f-empresa').value || null,
+    empresaId: empresaId,
     doc: document.getElementById('f-doc').value,
     responsavel: document.getElementById('f-responsavel').value,
     setor: document.getElementById('f-setor').value,
@@ -4878,7 +4761,134 @@ async function salvarContrato() {
     temParcelas, pgtoConfig, arquivo: arquivoB64
   };
 
-  async function pushContrato() {
+  let snapshotContrato = null;
+  let snapshotPagamentos = null;
+  let paymentsToCreate = [];
+  let paymentsToUpdate = [];
+  let newPagamentosResult = null;
+
+  if (editingId) {
+    const idx = contratos.findIndex(c => c.id === editingId);
+    if (idx === -1) { _saveSyncRunning = false; return; }
+    if (!arquivoB64) {
+      if (_arquivoContrato && !(_arquivoContrato instanceof File)) {
+        arquivoB64 = _arquivoContrato;
+      } else {
+        arquivoB64 = contratos[idx].arquivo;
+      }
+    }
+    contractData.id = editingId;
+    contractData.arquivo = arquivoB64;
+
+    snapshotContrato = JSON.parse(JSON.stringify(contratos[idx]));
+    snapshotPagamentos = JSON.parse(JSON.stringify(getPagamentos()));
+
+    contratos[idx] = { ...contratos[idx],
+      numero, objeto, parte, valor, inicio, fim,
+      tipo: contractData.tipo, empresaId, doc: contractData.doc,
+      responsavel: contractData.responsavel, setor: contractData.setor,
+      obs: contractData.obs, temParcelas, pgtoConfig, arquivo: arquivoB64,
+      aditivos: contratos[idx].aditivos || [], updated_at: now()
+    };
+
+    const pagamentos = getPagamentos();
+    const paidPayments = pagamentos.filter(p => p.contratoId === editingId && p.dataPagamento !== null);
+    const unpaidPayments = pagamentos.filter(p => p.contratoId === editingId && p.dataPagamento === null);
+    const otherPayments = pagamentos.filter(p => p.contratoId !== editingId);
+
+    unpaidPayments.forEach(p => { paymentsToUpdate.push({ ...p, deleted_at: now(), updated_at: now() }); });
+
+    if (temParcelas && pgtoConfig && pgtoConfig.forma === 'avulso') {
+      paymentsToCreate = _parcelasManuais.map(p => ({
+        id: uid(), contratoId: editingId, contratoNum: numero,
+        descricao: p.desc, valor: p.valor, vencimento: p.venc,
+        dataPagamento: null, valorPago: null, formaPgto: null,
+        obs: '', comprovante: null, status: 'pendente', updated_at: now()
+      }));
+    } else if (temParcelas && pgtoConfig && pgtoConfig.forma !== 'avulso') {
+      const valorJaPago = paidPayments.reduce((s, p) => s + (p.valorPago || p.valor || 0), 0);
+      const saldoRestante = valor - valorJaPago;
+      const qtdNovaTotal = pgtoConfig.qtdParcelas;
+      const qtdPagas = paidPayments.length;
+      const qtdRestantes = Math.max(0, qtdNovaTotal - qtdPagas);
+      if (qtdRestantes > 0 && saldoRestante > 0) {
+        const valorParcela = saldoRestante / qtdRestantes;
+        let inicioNovas = inicio;
+        if (paidPayments.length > 0) {
+          const lastDate = paidPayments.reduce((latest, p) => p.vencimento > latest ? p.vencimento : latest, '0000-00-00');
+          const d = new Date(lastDate + 'T12:00:00'); d.setMonth(d.getMonth() + 1);
+          inicioNovas = d.toISOString().slice(0, 10);
+        }
+        for (let i = 0; i < qtdRestantes; i++) {
+          const d = new Date(inicioNovas + 'T12:00:00'); d.setMonth(d.getMonth() + i);
+          paymentsToCreate.push({
+            id: uid(), contratoId: editingId, contratoNum: numero,
+            descricao: `Parcela ${qtdPagas + i + 1}/${qtdNovaTotal}`,
+            valor: Math.round(valorParcela * 100) / 100,
+            vencimento: d.toISOString().slice(0, 10),
+            dataPagamento: null, valorPago: null, formaPgto: null,
+            obs: '', comprovante: null, status: 'pendente', updated_at: now()
+          });
+        }
+      }
+    }
+    const updatedUnpaid = paymentsToUpdate.map(p => ({ ...p }));
+    newPagamentosResult = otherPayments.concat(paidPayments).concat(updatedUnpaid).concat(paymentsToCreate);
+  } else {
+    if (cachedContratos.find(c => c.numero === numero)) {
+      _saveSyncRunning = false;
+      mostrarToast('Ja existe um contrato com esse numero.', 'erro'); return;
+    }
+    contractData.id = uid();
+    const newContrato = {
+      ...contractData, aditivos: [], active: 1,
+      criadoEm: now(), updated_at: now()
+    };
+
+    if (temParcelas && pgtoConfig && pgtoConfig.forma === 'avulso') {
+      paymentsToCreate = _parcelasManuais.map(p => ({
+        id: uid(), contratoId: newContrato.id, contratoNum: numero,
+        descricao: p.desc, valor: p.valor, vencimento: p.venc,
+        dataPagamento: null, valorPago: null, formaPgto: null,
+        obs: '', comprovante: null, status: 'pendente', updated_at: now()
+      }));
+    } else if (temParcelas && pgtoConfig && pgtoConfig.forma !== 'avulso') {
+      const cfg = pgtoConfig;
+      const qtd = cfg.qtdParcelas || calcularMeses(inicio, fim);
+      const dia = cfg.diaVenc || 10;
+      const valorP = cfg.valorParcela || (valor / qtd);
+      const inicioDate = new Date(inicio + 'T12:00:00');
+      if (cfg.forma === 'unico') {
+        paymentsToCreate.push({
+          id: uid(), contratoId: newContrato.id, contratoNum: numero,
+          descricao: 'Pagamento Unico',
+          valor: cfg.valorParcela || valor, vencimento: fim,
+          dataPagamento: null, formaPgto: null, obs: '',
+          status: 'pendente', updated_at: now()
+        });
+      } else {
+        for (let i = 0; i < qtd; i++) {
+          const d = new Date(inicioDate.getFullYear(), inicioDate.getMonth() + i, dia);
+          paymentsToCreate.push({
+            id: uid(), contratoId: newContrato.id, contratoNum: numero,
+            descricao: `Parcela ${i+1}/${qtd}`,
+            valor: Math.round(valorP * 100) / 100,
+            vencimento: d.toISOString().slice(0, 10),
+            dataPagamento: null, formaPgto: null, obs: '',
+            status: 'pendente', updated_at: now()
+          });
+        }
+      }
+    }
+    snapshotContrato = null;
+    snapshotPagamentos = null;
+    newPagamentosResult = null;
+    window._newContrato = newContrato;
+  }
+
+  mostrarToast('Salvando no servidor...', 'info');
+
+  try {
     if (editingId) {
       const r = await apiCall('PUT', 'contracts/' + editingId, contractData);
       if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao atualizar contrato');
@@ -4886,37 +4896,52 @@ async function salvarContrato() {
       const r = await apiCall('POST', 'contracts', contractData);
       if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao criar contrato');
     }
-    const pays = getPagamentos().filter(p => p.contratoId === contractId);
-    let payErrors = 0;
-    for (const p of pays) {
-      try {
-        if (p.deleted_at) {
-          const r = await apiCall('PUT', 'payments/' + p.id, { deleted_at: p.deleted_at, status: 'cancelado' });
-          if (!r || !r.ok) payErrors++;
-        } else if (!existingPaymentIds.includes(p.id)) {
-          const r = await apiCall('POST', 'payments', p);
-          if (!r || !r.ok) { payErrors++; console.error('[PUSH] Erro ao salvar pagamento:', p.id, r?.erro); }
-        }
-      } catch(e) { payErrors++; console.error('[PUSH] Excecao ao salvar pagamento:', p.id, e.message); }
-    }
-    if (payErrors > 0) throw new Error(payErrors + ' pagamento(s) falharam no push');
-  }
 
-  pushContrato().then(() => {
+    let payErrors = 0;
+    for (const p of paymentsToCreate) {
+      try {
+        const r = await apiCall('POST', 'payments', p);
+        if (!r || !r.ok) { payErrors++; console.error('[PUSH] Erro ao criar pagamento:', p.id, r?.erro); }
+      } catch(e) { payErrors++; console.error('[PUSH] Excecao ao criar pagamento:', p.id, e.message); }
+    }
+    for (const p of paymentsToUpdate) {
+      try {
+        const r = await apiCall('PUT', 'payments/' + p.id, { deleted_at: p.deleted_at, status: 'cancelado', updated_at: p.updated_at });
+        if (!r || !r.ok) { payErrors++; console.error('[PUSH] Erro ao atualizar pagamento:', p.id, r?.erro); }
+      } catch(e) { payErrors++; console.error('[PUSH] Excecao ao atualizar pagamento:', p.id, e.message); }
+    }
+    if (payErrors > 0) console.warn('[PUSH] ' + payErrors + ' pagamento(s) com erro, continuando...');
+
+    if (editingId) {
+      if (newPagamentosResult) savePagamentos(newPagamentosResult);
+    } else {
+      const newContrato = window._newContrato;
+      delete window._newContrato;
+      contratos.push(newContrato);
+      saveContratos(contratos);
+      if (paymentsToCreate.length > 0) {
+        const pagamentos = getPagamentos();
+        pagamentos.push(...paymentsToCreate);
+        savePagamentos(pagamentos);
+      }
+    }
+
     _saveSyncRunning = false;
     mostrarToast('Contrato salvo e sincronizado com sucesso!', 'sucesso');
-  }).catch(e => {
-    console.error('[PUSH] Erro no push direto, usando sync:', e.message);
-    syncToServer().then(resp => {
-      _saveSyncRunning = false;
-      mostrarToast(resp && resp.ok ? 'Contrato salvo e sincronizado!' : 'ATENCAO: Contrato salvo APENAS localmente. Sera retentado automaticamente.', resp && resp.ok ? 'sucesso' : 'erro');
-    }).catch(() => {
-      _saveSyncRunning = false;
-      mostrarToast('ATENCAO: Contrato salvo APENAS localmente. Sera retentado automaticamente.', 'erro');
-    });
-  });
+  } catch (e) {
+    if (editingId && snapshotContrato) {
+      const idx = contratos.findIndex(c => c.id === editingId);
+      if (idx !== -1) contratos[idx] = snapshotContrato;
+      saveContratos(contratos);
+      if (snapshotPagamentos) savePagamentos(snapshotPagamentos);
+    }
+    _saveSyncRunning = false;
+    mostrarToast('ERRO ao salvar no servidor: ' + e.message, 'erro');
+  }
+
+  window._editandoContrato = null;
   limparFormContrato();
-  document.querySelectorAll('nav button')[1].click(); // Goto contratos
+  document.querySelectorAll('nav button')[1].click();
 }
 
 function gerarParcelasAuto(contrato) {
@@ -5241,42 +5266,52 @@ function editarContrato(id) {
   }
 }
 
-function excluirContrato(id) {
+async function excluirContrato(id) {
   if (!confirm('Excluir este contrato e todos os seus pagamentos?')) return;
-  const ts = now();
-  const contratos = getContratos();
-  const idx = contratos.findIndex(c => c.id === id);
-  if (idx !== -1) { contratos[idx].deleted_at = ts; contratos[idx].updated_at = ts; }
-  saveContratos(contratos);
-  const pagamentos = getPagamentos();
-  pagamentos.filter(p => p.contratoId === id).forEach(p => { p.deleted_at = ts; p.updated_at = ts; });
-  savePagamentos(pagamentos);
-  renderContratos();
-  renderDashboard();
   _saveSyncRunning = true;
-  apiCall('PUT', 'contracts/' + id, { deleted_at: ts, updated_at: ts }).then(r => {
+  mostrarToast('Excluindo no servidor...', 'info');
+  const ts = now();
+  try {
+    const r = await apiCall('PUT', 'contracts/' + id, { deleted_at: ts, updated_at: ts });
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao excluir contrato');
+    const contratos = getContratos();
+    const idx = contratos.findIndex(c => c.id === id);
+    if (idx !== -1) { contratos[idx].deleted_at = ts; contratos[idx].updated_at = ts; }
+    saveContratos(contratos);
+    const pagamentos = getPagamentos();
+    pagamentos.filter(p => p.contratoId === id).forEach(p => { p.deleted_at = ts; p.updated_at = ts; });
+    savePagamentos(pagamentos);
+    renderContratos();
+    renderDashboard();
+    mostrarToast('Contrato excluido com sucesso!', 'sucesso');
+  } catch (e) {
+    mostrarToast('Erro ao excluir: ' + e.message, 'erro');
+  } finally {
     _saveSyncRunning = false;
-  }).catch(() => {
-    syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
-  });
+  }
 }
 
-function inativarContrato(id) {
+async function inativarContrato(id) {
   const contratos = getContratos();
   const c = contratos.find(x => x.id === id);
   if (!c) return;
-  c.active = c.active === 0 ? 1 : 0;
-  c.updated_at = now();
-  saveContratos(contratos);
-  renderContratos();
-  renderDashboard();
+  const newActive = c.active === 0 ? 1 : 0;
+  const ts = now();
   _saveSyncRunning = true;
-  apiCall('PUT', 'contracts/' + id, { active: c.active, updated_at: c.updated_at }).then(r => {
+  try {
+    const r = await apiCall('PUT', 'contracts/' + id, { active: newActive, updated_at: ts });
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao atualizar contrato');
+    c.active = newActive;
+    c.updated_at = ts;
+    saveContratos(contratos);
+    renderContratos();
+    renderDashboard();
+    mostrarToast(`Contrato ${newActive ? 'ativado' : 'inativado'} com sucesso.`, 'sucesso');
+  } catch (e) {
+    mostrarToast('Erro ao atualizar: ' + e.message, 'erro');
+  } finally {
     _saveSyncRunning = false;
-  }).catch(() => {
-    syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
-  });
-  mostrarToast(`Contrato ${c.active ? 'ativado' : 'inativado'} com sucesso.`, 'sucesso');
+  }
 }
 
 // ===================== ADITIVO =====================
@@ -5351,6 +5386,8 @@ async function salvarAditivo() {
     arquivo = await fileToBase64(fileInput.files[0]);
   }
 
+  const snapshot = JSON.parse(JSON.stringify(contratos[idx]));
+
   if (_editandoAditivoId) {
     const a = contratos[idx].aditivos.find(x => x.id === _editandoAditivoId);
     if (!a) return;
@@ -5362,7 +5399,6 @@ async function salvarAditivo() {
     });
     contratos[idx].updated_at = now();
     recalcularContrato(contratos, idx);
-    mostrarToast('Aditivo editado com sucesso!', 'sucesso');
   } else {
     if (!contratos[idx]._valorBase) contratos[idx]._valorBase = contratos[idx].valor;
     const aditivo = {
@@ -5382,20 +5418,20 @@ async function salvarAditivo() {
 
   _editandoAditivoId = null;
   _arquivoAditivo = null;
-  saveContratos(contratos);
-  fecharModal('modal-aditivo');
-  renderContratos();
+  mostrarToast('Salvando aditivo no servidor...', 'info');
 
-  const contratoData = contratos[idx];
-  apiCall('PUT', 'contracts/' + contratoData.id, contratoData).then(r => {
-    mostrarToast(r && r.ok ? 'Aditivo salvo e sincronizado!' : 'Aditivo salvo localmente.', r && r.ok ? 'sucesso' : 'info');
-  }).catch(() => {
-    syncToServer().then(() => {
-      mostrarToast('Aditivo salvo e sincronizado!', 'sucesso');
-    }).catch(() => {
-      mostrarToast('Aditivo salvo localmente.', 'info');
-    });
-  });
+  try {
+    const r = await apiCall('PUT', 'contracts/' + contratos[idx].id, contratos[idx]);
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao salvar aditivo');
+    saveContratos(contratos);
+    fecharModal('modal-aditivo');
+    renderContratos();
+    mostrarToast('Aditivo salvo com sucesso!', 'sucesso');
+  } catch (e) {
+    contratos[idx] = snapshot;
+    saveContratos(contratos);
+    mostrarToast('Erro ao salvar aditivo: ' + e.message, 'erro');
+  }
 }
 
 function recalcularContrato(contratos, idx) {
@@ -5411,19 +5447,25 @@ function recalcularContrato(contratos, idx) {
   if (ultimaDataFim) c.fim = ultimaDataFim;
 }
 
-function excluirAditivo(contratoId, aditivoId) {
+async function excluirAditivo(contratoId, aditivoId) {
   if (!confirm('Excluir este aditivo?')) return;
   const contratos = getContratos();
   const idx = contratos.findIndex(c => c.id === contratoId);
   if (idx === -1) return;
+  const snapshot = JSON.parse(JSON.stringify(contratos[idx]));
   contratos[idx].aditivos = (contratos[idx].aditivos || []).filter(a => a.id !== aditivoId);
   recalcularContrato(contratos, idx);
-  saveContratos(contratos);
-  renderContratos();
-  apiCall('PUT', 'contracts/' + contratoId, contratos[idx]).catch(() => {
-    syncToServer().catch(() => {});
-  });
-  mostrarToast('Aditivo excluido e valores recalculados.', 'sucesso');
+  try {
+    const r = await apiCall('PUT', 'contracts/' + contratoId, contratos[idx]);
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao excluir aditivo');
+    saveContratos(contratos);
+    renderContratos();
+    mostrarToast('Aditivo excluido e valores recalculados.', 'sucesso');
+  } catch (e) {
+    contratos[idx] = snapshot;
+    saveContratos(contratos);
+    mostrarToast('Erro ao excluir aditivo: ' + e.message, 'erro');
+  }
 }
 
 // ===================== PAGAMENTOS =====================
@@ -5532,7 +5574,7 @@ function abrirLancarPgto(contratoId) {
   abrirModal('modal-pagamento');
 }
 
-function salvarPagamento() {
+async function salvarPagamento() {
   const contratoId = document.getElementById('mp-contrato').value;
   const desc  = document.getElementById('mp-desc').value.trim();
   const valor = parseFloat(document.getElementById('mp-valor').value) || 0;
@@ -5542,12 +5584,10 @@ function salvarPagamento() {
   _saveSyncRunning = true;
 
   const c = getContratos().find(x=>x.id===contratoId);
-  const pagamentos = getPagamentos();
   const dataPgto = document.getElementById('mp-datapgto').value || null;
-  const newId = uid();
 
   const newPagamento = {
-    id: newId, contratoId, contratoNum: c.numero,
+    id: uid(), contratoId, contratoNum: c.numero,
     descricao: desc || 'Pagamento avulso',
     valor, vencimento: venc,
     dataPagamento: dataPgto,
@@ -5557,23 +5597,20 @@ function salvarPagamento() {
     updated_at: now()
   };
 
-  pagamentos.push(newPagamento);
-  savePagamentos(pagamentos);
-  fecharModal('modal-pagamento');
-  renderPagamentos();
-
-  apiCall('POST', 'payments', newPagamento).then(r => {
+  try {
+    const r = await apiCall('POST', 'payments', newPagamento);
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao salvar pagamento');
+    const pagamentos = getPagamentos();
+    pagamentos.push(newPagamento);
+    savePagamentos(pagamentos);
+    fecharModal('modal-pagamento');
+    renderPagamentos();
+    mostrarToast('Pagamento salvo com sucesso!', 'sucesso');
+  } catch (e) {
+    mostrarToast('Erro ao salvar pagamento: ' + e.message, 'erro');
+  } finally {
     _saveSyncRunning = false;
-    mostrarToast(r && r.ok ? 'Pagamento salvo e sincronizado!' : 'Pagamento salvo localmente.', r && r.ok ? 'sucesso' : 'info');
-  }).catch(() => {
-    syncToServer().then(() => {
-      _saveSyncRunning = false;
-      mostrarToast('Pagamento salvo e sincronizado!', 'sucesso');
-    }).catch(() => {
-      _saveSyncRunning = false;
-      mostrarToast('Pagamento salvo localmente.', 'info');
-    });
-  });
+  }
 }
 
 function abrirBaixa(id) {
@@ -5606,76 +5643,80 @@ async function confirmarBaixa() {
   const pagamentos = getPagamentos();
   const idx = pagamentos.findIndex(p=>p.id===_baixaId);
   if (idx===-1) { _saveSyncRunning = false; return; }
-  pagamentos[idx].dataPagamento = data;
-  pagamentos[idx].valorPago     = valor;
-  pagamentos[idx].formaPgto     = document.getElementById('bx-forma').value;
-  pagamentos[idx].obs           = document.getElementById('bx-obs').value;
-  pagamentos[idx].updated_at    = now();
-  if(comprovanteB64) pagamentos[idx].comprovante = comprovanteB64;
 
-  savePagamentos(pagamentos);
-  fecharModal('modal-baixar');
-  renderPagamentos();
-  renderDashboard();
+  const updatedData = {
+    dataPagamento: data,
+    valorPago: valor,
+    formaPgto: document.getElementById('bx-forma').value,
+    obs: document.getElementById('bx-obs').value,
+    updated_at: now()
+  };
+  if(comprovanteB64) updatedData.comprovante = comprovanteB64;
 
-  const updated = pagamentos[idx];
-  apiCall('PUT', 'payments/' + _baixaId, updated).then(r => {
+  try {
+    const r = await apiCall('PUT', 'payments/' + _baixaId, updatedData);
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao registrar baixa');
+    Object.assign(pagamentos[idx], updatedData);
+    savePagamentos(pagamentos);
+    fecharModal('modal-baixar');
+    renderPagamentos();
+    renderDashboard();
+    mostrarToast('Baixa registrada com sucesso!', 'sucesso');
+  } catch (e) {
+    mostrarToast('Erro ao registrar baixa: ' + e.message, 'erro');
+  } finally {
     _saveSyncRunning = false;
-    mostrarToast(r && r.ok ? 'Baixa registrada e sincronizada!' : 'Baixa registrada localmente.', r && r.ok ? 'sucesso' : 'info');
-  }).catch(() => {
-    syncToServer().then(() => {
-      _saveSyncRunning = false;
-      mostrarToast('Baixa registrada e sincronizada!', 'sucesso');
-    }).catch(() => {
-      _saveSyncRunning = false;
-      mostrarToast('Baixa registrada localmente.', 'info');
-    });
-  });
+  }
 }
 
-function excluirPgto(id) {
+async function excluirPgto(id) {
   if (!confirm('Excluir este pagamento?')) return;
   _saveSyncRunning = true;
-  const pagamentos = getPagamentos();
-  const idx = pagamentos.findIndex(p => p.id === id);
-  if (idx !== -1) {
-    pagamentos[idx].deleted_at = now();
-    pagamentos[idx].updated_at = now();
-  }
-  savePagamentos(pagamentos);
-  renderPagamentos();
-  renderDashboard();
-  apiCall('PUT', 'payments/' + id, { deleted_at: pagamentos[idx].deleted_at, status: 'cancelado', updated_at: pagamentos[idx].updated_at }).then(r => {
+  const ts = now();
+  try {
+    const r = await apiCall('PUT', 'payments/' + id, { deleted_at: ts, status: 'cancelado', updated_at: ts });
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao excluir pagamento');
+    const pagamentos = getPagamentos();
+    const idx = pagamentos.findIndex(p => p.id === id);
+    if (idx !== -1) { pagamentos[idx].deleted_at = ts; pagamentos[idx].updated_at = ts; }
+    savePagamentos(pagamentos);
+    renderPagamentos();
+    renderDashboard();
+    mostrarToast('Pagamento excluido com sucesso!', 'sucesso');
+  } catch (e) {
+    mostrarToast('Erro ao excluir: ' + e.message, 'erro');
+  } finally {
     _saveSyncRunning = false;
-  }).catch(() => {
-    syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
-  });
+  }
 }
 
-function estornarBaixa(id) {
+async function estornarBaixa(id) {
   const pagamentos = getPagamentos();
   const idx = pagamentos.findIndex(p => p.id === id);
   if (idx === -1) return;
   const p = pagamentos[idx];
   if (!confirm(`Estornar o pagamento "${escapeHtml(p.descricao)}" de R$ ${fmtMoeda(p.valorPago || p.valor)}?`)) return;
+  _saveSyncRunning = true;
   const hoje = new Date().toISOString().slice(0, 10);
   const obsAtual = p.obs || '';
-  pagamentos[idx].dataPagamento = null;
-  pagamentos[idx].valorPago = null;
-  pagamentos[idx].formaPgto = null;
-  pagamentos[idx].comprovante = null;
-  pagamentos[idx].status = 'pendente';
-  pagamentos[idx].updated_at = now();
-  pagamentos[idx].obs = (obsAtual ? obsAtual + ' | ' : '') + '[Estornado em ' + fmtData(hoje) + ']';
-  savePagamentos(pagamentos);
-  renderPagamentos();
-  renderDashboard();
-  _saveSyncRunning = true;
-  apiCall('PUT', 'payments/' + id, pagamentos[idx]).then(r => {
+  const updatedData = {
+    dataPagamento: null, valorPago: null, formaPgto: null,
+    comprovante: null, status: 'pendente', updated_at: now(),
+    obs: (obsAtual ? obsAtual + ' | ' : '') + '[Estornado em ' + fmtData(hoje) + ']'
+  };
+  try {
+    const r = await apiCall('PUT', 'payments/' + id, { ...updatedData, deleted_at: null });
+    if (!r || !r.ok) throw new Error(r?.erro || 'Erro ao estornar pagamento');
+    Object.assign(pagamentos[idx], updatedData);
+    savePagamentos(pagamentos);
+    renderPagamentos();
+    renderDashboard();
+    mostrarToast('Pagamento estornado com sucesso!', 'sucesso');
+  } catch (e) {
+    mostrarToast('Erro ao estornar: ' + e.message, 'erro');
+  } finally {
     _saveSyncRunning = false;
-  }).catch(() => {
-    syncToServer().then(() => { _saveSyncRunning = false; }).catch(() => { _saveSyncRunning = false; });
-  });
+  }
 }
 
 // ===================== DASHBOARD =====================
@@ -6721,64 +6762,79 @@ function limparSelecao() {
   updateBatchBar();
 }
 
-function baixarSelecionados() {
+async function baixarSelecionados() {
   const ids = getSelectedPgIds();
   if (!ids.length) { mostrarToast('Nenhum pagamento selecionado.', 'alerta'); return; }
   if (!confirm(`Deseja baixar ${ids.length} pagamento(s) selecionado(s)?`)) return;
+  _saveSyncRunning = true;
+  mostrarToast('Baixando no servidor...', 'info');
+  const data = new Date().toISOString().slice(0,10);
+  const pagamentos = getPagamentos();
   let ok = 0, erro = 0;
-  ids.forEach(id => {
-    const p = getPagamentos().find(x => x.id === id);
-    if (p && calcStatusPgto(p) !== 'pago') {
-      const data = new Date().toISOString().slice(0,10);
-      p.dataPagamento = data;
-      p.valorPago = p.valor;
-      p.status = 'pago';
-      ok++;
-    } else { erro++; }
-  });
-  savePagamentos(getPagamentos());
-  renderPagamentos();
+  for (const id of ids) {
+    const p = pagamentos.find(x => x.id === id);
+    if (!p || calcStatusPgto(p) === 'pago') { erro++; continue; }
+    try {
+      const r = await apiCall('PUT', 'payments/' + id, { dataPagamento: data, valorPago: p.valor, status: 'pago', updated_at: now() });
+      if (r && r.ok) {
+        p.dataPagamento = data; p.valorPago = p.valor; p.status = 'pago';
+        ok++;
+      } else { erro++; }
+    } catch(e) { erro++; }
+  }
+  if (ok > 0) { savePagamentos(pagamentos); renderPagamentos(); }
   limparSelecao();
-  syncToServer().catch(() => {});
+  _saveSyncRunning = false;
   mostrarToast(`${ok} pagamento(s) baixado(s).${erro ? ` ${erro} erro(s).` : ''}`, ok > 0 ? 'sucesso' : 'erro');
 }
 
-function estornarSelecionados() {
+async function estornarSelecionados() {
   const ids = getSelectedPgIds();
   if (!ids.length) { mostrarToast('Nenhum pagamento selecionado.', 'alerta'); return; }
   if (!confirm(`Deseja estornar ${ids.length} pagamento(s) selecionado(s)?`)) return;
+  _saveSyncRunning = true;
+  const pagamentos = getPagamentos();
   let ok = 0;
-  ids.forEach(id => {
-    const p = getPagamentos().find(x => x.id === id);
-    if (p && calcStatusPgto(p) === 'pago') {
-      p.dataPagamento = '';
-      p.valorPago = 0;
-      p.status = 'pendente';
-      p.formaPagamento = '';
-      p.comprovante = null;
-      ok++;
-    }
-  });
-  savePagamentos(getPagamentos());
-  renderPagamentos();
+  for (const id of ids) {
+    const p = pagamentos.find(x => x.id === id);
+    if (!p || calcStatusPgto(p) !== 'pago') continue;
+    try {
+      const r = await apiCall('PUT', 'payments/' + id, { dataPagamento: null, valorPago: 0, formaPgto: '', comprovante: null, status: 'pendente', updated_at: now() });
+      if (r && r.ok) {
+        p.dataPagamento = ''; p.valorPago = 0; p.status = 'pendente'; p.formaPagamento = ''; p.comprovante = null;
+        ok++;
+      }
+    } catch(e) {}
+  }
+  if (ok > 0) { savePagamentos(pagamentos); renderPagamentos(); renderDashboard(); }
   limparSelecao();
-  syncToServer().catch(() => {});
+  _saveSyncRunning = false;
   mostrarToast(`${ok} pagamento(s) estornado(s).`, 'sucesso');
 }
 
-function excluirSelecionados() {
+async function excluirSelecionados() {
   const ids = getSelectedPgIds();
   if (!ids.length) { mostrarToast('Nenhum pagamento selecionado.', 'alerta'); return; }
   if (!confirm(`ATENCAO: Deseja excluir ${ids.length} pagamento(s) selecionado(s)? Esta acao nao pode ser desfeita.`)) return;
+  _saveSyncRunning = true;
+  const ts = now();
+  const pagamentos = getPagamentos();
   let ok = 0;
-  ids.forEach(id => {
-    const idx = getPagamentos().findIndex(x => x.id === id);
-    if (idx >= 0) { getPagamentos().splice(idx, 1); ok++; }
-  });
-  savePagamentos(getPagamentos());
+  for (const id of ids) {
+    const idx = pagamentos.findIndex(x => x.id === id);
+    if (idx < 0) continue;
+    try {
+      const r = await apiCall('PUT', 'payments/' + id, { deleted_at: ts, status: 'cancelado', updated_at: ts });
+      if (r && r.ok) {
+        pagamentos[idx].deleted_at = ts; pagamentos[idx].updated_at = ts;
+        ok++;
+      }
+    } catch(e) {}
+  }
+  savePagamentos(pagamentos);
   renderPagamentos();
   limparSelecao();
-  syncToServer().catch(() => {});
+  _saveSyncRunning = false;
   mostrarToast(`${ok} pagamento(s) excluido(s).`, 'sucesso');
 }
 
