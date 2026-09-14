@@ -435,7 +435,7 @@ function montarHtmlContratos(vencidos, grupos, tituloExtra = '') {
   return html
 }
 
-function processCertidoesVencidas(certidoes, hoje) {
+function processCertidoesVencidas(certidoes, hoje, empMap) {
   const vencidas = []
   const hj = new Date(hoje)
   for (const ct of certidoes) {
@@ -444,12 +444,13 @@ function processCertidoesVencidas(certidoes, hoje) {
     if (isNaN(df)) continue
     const diff = Math.floor((hj - df) / 86400000)
     if (diff <= 0) continue
-    vencidas.push({ id: ct.id, tipo: ct.tipo, empresa: ct.empresa_id || '', cnpj: ct.cnpj || '', uf: ct.uf || '', cidade: ct.cidade || '', validade: datefmt(fv), dias: diff })
+    const empNome = empMap ? (empMap[ct.empresa_id] || ct.empresa_id || '') : (ct.empresa_id || '')
+    vencidas.push({ id: ct.id, tipo: ct.tipo, empresa: empNome, cnpj: ct.cnpj || '', uf: ct.uf || '', cidade: ct.cidade || '', validade: datefmt(fv), dias: diff })
   }
   return vencidas
 }
 
-function processCertidoesAVencer(certidoes, hoje) {
+function processCertidoesAVencer(certidoes, hoje, empMap) {
   const grupos = { d35: [], d30: [], d15: [], d0_14: [] }
   const hj = new Date(hoje)
   for (const ct of certidoes) {
@@ -458,7 +459,8 @@ function processCertidoesAVencer(certidoes, hoje) {
     if (isNaN(df)) continue
     const diff = Math.floor((df - hj) / 86400000)
     if (diff < 0) continue
-    const info = { id: ct.id, tipo: ct.tipo, empresa: ct.empresa_id || '', cnpj: ct.cnpj || '', uf: ct.uf || '', cidade: ct.cidade || '', validade: datefmt(fv), dias: diff }
+    const empNome = empMap ? (empMap[ct.empresa_id] || ct.empresa_id || '') : (ct.empresa_id || '')
+    const info = { id: ct.id, tipo: ct.tipo, empresa: empNome, cnpj: ct.cnpj || '', uf: ct.uf || '', cidade: ct.cidade || '', validade: datefmt(fv), dias: diff }
     if (diff >= 31 && diff <= 35) grupos.d35.push(info)
     else if (diff >= 16 && diff <= 30) grupos.d30.push(info)
     else if (diff === 15) grupos.d15.push(info)
@@ -911,6 +913,9 @@ async function netlifyHandler(event) {
         return json({ ok: true, msg: 'Nenhum destinatario cadastrado para enviar alertas.' })
       }
       const { data: certidoes } = await getSupabase().from('certidoes').select('*')
+      const { data: empresas } = await getSupabase().from('companies').select('id, nome')
+      const empMap = {}
+      for (const e of (empresas || [])) empMap[e.id] = e.nome || ''
       const hj = today()
 
       let enviados = 0, erros = []
@@ -920,8 +925,8 @@ async function netlifyHandler(event) {
         const empresaIds = dest.empresaIds || []
         const empIdsSet = empresaIds.length ? new Set(empresaIds) : null
         const empCertidoes = (certidoes || []).filter(ct => !empIdsSet || empIdsSet.has(ct.empresa_id))
-        const vencidas = processCertidoesVencidas(empCertidoes, hj)
-        const grupos = processCertidoesAVencer(empCertidoes, hj)
+        const vencidas = processCertidoesVencidas(empCertidoes, hj, empMap)
+        const grupos = processCertidoesAVencer(empCertidoes, hj, empMap)
         if (!vencidas.length && !Object.values(grupos).some(g => g.length)) continue
         const rotulo = dest.nome ? ` - ${dest.nome}` : ''
         const htmlBody = `<html><body style="font-family:Arial,sans-serif;padding:20px">${montarHtmlCertidoes(vencidas, grupos, rotulo)}<p style="color:#666;font-size:12px">Gerado em ${new Date().toLocaleString('pt-BR')}</p></body></html>`
