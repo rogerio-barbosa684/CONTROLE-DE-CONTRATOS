@@ -1004,8 +1004,8 @@
           <input type="text" id="f-parte" placeholder="Nome ou razão social" oninput="toUpper(this)"/>
         </div>
         <div class="form-group">
-          <label>CNPJ / CPF</label>
-        <input type="text" id="f-doc" placeholder="00.000.000/0001-00"
+          <label>CNPJ / CPF *</label>
+        <input type="text" id="f-doc" placeholder="00.000.000/0001-00" required
           oninput="onDocInput(this)" onblur="onDocBlur(this)" maxlength="18"/>
         <small id="f-doc-tipo" style="margin-top:2px;font-size:0.78rem;color:#888;"></small>
       </div>
@@ -1033,7 +1033,7 @@
         </div>
         <div class="form-group full">
           <label>Observações</label>
-          <textarea id="f-obs" placeholder="Informações adicionais..."></textarea>
+          <textarea id="f-obs" placeholder="Informações adicionais..." oninput="toUpper(this)"></textarea>
         </div>
         <div class="form-group full">
           <label>Documento do Contrato (PDF/Imagem) *</label>
@@ -1090,7 +1090,7 @@
             <div class="form-grid" style="margin-top:12px; padding:12px; background:#f7f9fc; border-radius:6px;">
               <div class="form-group">
                 <label>Descrição</label>
-                <input type="text" id="pm-desc" placeholder="Ex: Parcela 1, Sinal..."/>
+                <input type="text" id="pm-desc" placeholder="Ex: Parcela 1, Sinal..." oninput="toUpper(this)"/>
               </div>
               <div class="form-group">
                 <label>Valor (R$)</label>
@@ -1159,7 +1159,7 @@
           <input type="number" id="filtro-pg-valor-max" placeholder="0,00" step="0.01" oninput="renderPagamentos()"/>
         </div>
       </div>
-      <div id="batch-bar" style="display:none;background:#eaf2f8;padding:10px 16px;border-radius:6px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div id="batch-bar" style="display:none;background:#eaf2f8;padding:10px 16px;border-radius:6px;margin-bottom:12px;align-items:center;gap:12px;flex-wrap:wrap;">
         <span id="batch-count" style="font-size:0.85rem;font-weight:bold;color:#1a3c5e;"></span>
         <button class="btn btn-sm btn-success" onclick="baixarSelecionados()">Baixar Selecionados</button>
         <button class="btn btn-sm" style="background:#d4820a;color:white;" onclick="estornarSelecionados()">Estornar Selecionados</button>
@@ -1289,8 +1289,12 @@
           <select id="mc-empresa"><option value="">Selecione...</option></select>
         </div>
         <div class="form-group">
-          <label>CNPJ</label>
-          <input type="text" id="mc-cnpj" placeholder="00.000.000/0001-00" oninput="onDocInput(this)" onblur="onDocBlur(this)" maxlength="18"/>
+          <label>CNPJ *</label>
+          <input type="text" id="mc-cnpj" placeholder="00.000.000/0001-00" oninput="onDocInput(this)" onblur="onDocBlur(this)" maxlength="18" required/>
+        </div>
+        <div class="form-group">
+          <label>Tipo da Certidão *</label>
+          <select id="mc-tipo" onchange="onTipoCertidaoChange()"><option value="">Selecione...</option></select>
         </div>
         <div class="form-group" style="position:relative;">
           <label>UF</label>
@@ -1298,15 +1302,11 @@
           <input type="hidden" id="mc-uf-val"/>
           <div id="mc-uf-dropdown" class="cidade-dropdown"></div>
         </div>
-        <div class="form-group" style="position:relative;">
+        <div class="form-group" style="position:relative;" id="mc-cidade-group">
           <label>Cidade</label>
           <input type="text" id="mc-cidade" placeholder="Selecione a UF primeiro..." oninput="onCidadeInput()" onfocus="onCidadeFocus()" onkeydown="onCidadeKeydown(event)" autocomplete="off"/>
           <input type="hidden" id="mc-cidade-val"/>
           <div id="mc-cidade-dropdown" class="cidade-dropdown"></div>
-        </div>
-        <div class="form-group">
-          <label>Tipo da Certidão *</label>
-          <select id="mc-tipo"><option value="">Selecione...</option></select>
         </div>
         <div class="form-group">
           <label>Data de Emissão</label>
@@ -1330,7 +1330,7 @@
         </div>
         <div class="form-group full">
           <label>Observações</label>
-          <textarea id="mc-obs" placeholder="Informações adicionais..."></textarea>
+          <textarea id="mc-obs" placeholder="Informações adicionais..." oninput="toUpper(this)"></textarea>
         </div>
       </div>
       <div class="btn-row">
@@ -1349,23 +1349,23 @@
       <div class="form-grid">
         <div class="form-group">
           <label>Nº Licitação *</label>
-          <input type="text" id="ml-numero" placeholder="Ex: 001/2026"/>
+          <input type="text" id="ml-numero" placeholder="Ex: 001/2026" oninput="toUpper(this)"/>
         </div>
         <div class="form-group">
           <label>Nome da Licitação</label>
-          <input type="text" id="ml-nome" placeholder="Nome/descrição da licitação"/>
+          <input type="text" id="ml-nome" placeholder="Nome/descrição da licitação" oninput="toUpper(this)"/>
         </div>
         <div class="form-group">
-          <label>CNPJ</label>
-          <input type="text" id="ml-cnpj" placeholder="00.000.000/0000-00"/>
+          <label>CNPJ *</label>
+          <input type="text" id="ml-cnpj" placeholder="00.000.000/0000-00" oninput="onDocInput(this)" onblur="onDocBlur(this)" maxlength="18" required/>
         </div>
         <div class="form-group">
           <label>Edital</label>
-          <input type="text" id="ml-edital" placeholder="Nº do edital"/>
+          <input type="text" id="ml-edital" placeholder="Nº do edital" oninput="toUpper(this)"/>
         </div>
         <div class="form-group full">
           <label>Objeto *</label>
-          <input type="text" id="ml-objeto" placeholder="Descrição do objeto"/>
+          <input type="text" id="ml-objeto" placeholder="Descrição do objeto" oninput="toUpper(this)"/>
         </div>
         <div class="form-group">
           <label>Empresa Vencedora</label>
@@ -1402,7 +1402,7 @@
         </div>
         <div class="form-group full">
           <label>Observações</label>
-          <textarea id="ml-obs" placeholder="Informações adicionais..."></textarea>
+          <textarea id="ml-obs" placeholder="Informações adicionais..." oninput="toUpper(this)"></textarea>
         </div>
       </div>
 
@@ -1465,7 +1465,7 @@
         </div>
         <div class="form-group full">
           <label>Descrição</label>
-          <textarea id="mal-descricao" placeholder="Descrição do aditivo/renovação..."></textarea>
+          <textarea id="mal-descricao" placeholder="Descrição do aditivo/renovação..." oninput="toUpper(this)"></textarea>
         </div>
         <div class="form-group">
           <label>Valor Anterior (R$)</label>
@@ -1572,10 +1572,10 @@
         <div style="display:flex;gap:8px;margin-bottom:16px;align-items:end;flex-wrap:wrap;">
           <div class="form-group" style="flex:1;min-width:180px;">
             <label>Nome da Empresa</label>
-            <input type="text" id="nova-empresa-nome" placeholder="Ex: Empresa ABC Ltda"/>
+            <input type="text" id="nova-empresa-nome" placeholder="Ex: Empresa ABC Ltda" oninput="toUpper(this)"/>
           </div>
           <div class="form-group" style="flex:1;min-width:160px;">
-            <label>CNPJ</label>
+            <label>CNPJ *</label>
             <input type="text" id="nova-empresa-cnpj" placeholder="00.000.000/0001-00" oninput="onDocInput(this)" onblur="onDocBlur(this)" maxlength="18"/>
           </div>
           <button class="btn btn-primary" id="btn-salvar-empresa" onclick="salvarEmpresa()" style="margin-bottom:1px;">Adicionar</button>
@@ -1599,7 +1599,7 @@
         <div style="display:flex;gap:8px;margin-bottom:16px;align-items:end;flex-wrap:wrap;">
           <div class="form-group" style="flex:1;min-width:180px;">
             <label>Nome do Setor</label>
-            <input type="text" id="novo-setor-nome" placeholder="Ex: Financeiro" onkeydown="if(event.key==='Enter')salvarSetor()"/>
+            <input type="text" id="novo-setor-nome" placeholder="Ex: Financeiro" onkeydown="if(event.key==='Enter')salvarSetor()" oninput="toUpper(this)"/>
           </div>
           <button class="btn btn-primary" id="btn-salvar-setor" onclick="salvarSetor()" style="margin-bottom:1px;">Adicionar</button>
         </div>
@@ -1622,7 +1622,7 @@
         <div style="display:flex;gap:8px;margin-bottom:16px;align-items:end;">
           <div class="form-group" style="flex:1;">
             <label>Novo Tipo</label>
-            <input type="text" id="novo-tipo-input" placeholder="Ex: Serviço de TI" onkeydown="if(event.key==='Enter')adicionarTipo()"/>
+            <input type="text" id="novo-tipo-input" placeholder="Ex: Serviço de TI" onkeydown="if(event.key==='Enter')adicionarTipo()" oninput="toUpper(this)"/>
           </div>
           <button class="btn btn-primary" onclick="adicionarTipo()">Adicionar</button>
         </div>
@@ -1649,7 +1649,7 @@
           </div>
           <div class="form-group" style="flex:1;min-width:160px;">
             <label>Nome (opcional)</label>
-            <input type="text" id="dest-nome" placeholder="Ex: João"/>
+            <input type="text" id="dest-nome" placeholder="Ex: João" oninput="toUpper(this)"/>
           </div>
           <div class="form-group" style="flex:1;min-width:200px;">
             <label>Empresas vinculadas</label>
@@ -1690,7 +1690,7 @@
         <div class="form-grid">
           <div class="form-group">
             <label>Servidor SMTP</label>
-            <input type="text" id="cfg-smtp" placeholder="smtp.gmail.com"/>
+            <input type="text" id="cfg-smtp" placeholder="smtp.gmail.com" oninput="toUpper(this)"/>
           </div>
           <div class="form-group">
             <label>Porta SMTP</label>
@@ -2896,6 +2896,11 @@ function salvarEmpresa() {
   const nome = document.getElementById('nova-empresa-nome').value.trim();
   const cnpj = document.getElementById('nova-empresa-cnpj').value.trim();
   if (!nome) { mostrarToast('Informe o nome da empresa.', 'erro'); return; }
+  if (!cnpj) { mostrarToast('Informe o CNPJ da empresa.', 'erro'); return; }
+  const cnpjNumeros = cnpj.replace(/\D/g, '');
+  if (cnpjNumeros.length !== 14 && cnpjNumeros.length !== 11) {
+    mostrarToast('CNPJ/CPF invalido. Informe um CNPJ com 14 digitos ou CPF com 11 digitos.', 'erro'); return;
+  }
   const empresas = getEmpresas();
   const duplicata = empresas.find(e => e.nome.toLowerCase() === nome.toLowerCase() && e.id !== _editandoEmpresaId);
   if (duplicata) { mostrarToast('Esta empresa ja existe.', 'erro'); return; }
@@ -3226,8 +3231,9 @@ function savePagamentos(arr) {
 
 function syncToServer() {
   if (!db) return Promise.resolve();
+  const MAX_SYNC_SIZE = 3.5 * 1024 * 1024;
   const prepareRecord = (r) => r;
-  const snapshot = {
+  const fullSnapshot = {
     contratos: (cachedContratos || []).map(r => prepareRecord(r)),
     pagamentos: (cachedPagamentos || []).map(r => prepareRecord(r)),
     destinatarios: (cachedDestinatarios || []).map(r => prepareRecord(r)),
@@ -3235,16 +3241,48 @@ function syncToServer() {
     licitacoes: (cachedLicitacoes || []).map(r => prepareRecord(r)),
     last_sync_at: _lastSyncAt
   };
-  const total = snapshot.contratos.length + snapshot.pagamentos.length + snapshot.destinatarios.length + snapshot.certidoes.length + snapshot.licitacoes.length;
-  console.log('[SYNC-POST] Enviando TODOS:', total, 'registros (contratos:', snapshot.contratos.length, 'pagamentos:', snapshot.pagamentos.length, ')');
+  let payloadStr = JSON.stringify(fullSnapshot);
+  let skippedFiles = 0;
+  if (payloadStr.length > MAX_SYNC_SIZE) {
+    const stripLargeFiles = (arr, fileFields) => {
+      arr.forEach(r => {
+        fileFields.forEach(f => {
+          if (r[f] && typeof r[f] === 'object' && r[f].data && r[f].data.length > 10000) {
+            delete r[f];
+            skippedFiles++;
+          } else if (r[f] && typeof r[f] === 'string' && r[f].length > 10000) {
+            r[f] = '[]';
+            skippedFiles++;
+          }
+        });
+      });
+    };
+    stripLargeFiles(fullSnapshot.contratos, ['arquivo']);
+    stripLargeFiles(fullSnapshot.pagamentos, ['comprovante']);
+    stripLargeFiles(fullSnapshot.certidoes, ['arquivo']);
+    stripLargeFiles(fullSnapshot.licitacoes, ['arquivos']);
+    payloadStr = JSON.stringify(fullSnapshot);
+  }
+  if (payloadStr.length > MAX_SYNC_SIZE) {
+    const nukeFiles = (arr, fileFields) => {
+      arr.forEach(r => { fileFields.forEach(f => { if (r[f]) { delete r[f]; skippedFiles++; } }); });
+    };
+    nukeFiles(fullSnapshot.contratos, ['arquivo']);
+    nukeFiles(fullSnapshot.pagamentos, ['comprovante']);
+    nukeFiles(fullSnapshot.certidoes, ['arquivo']);
+    nukeFiles(fullSnapshot.licitacoes, ['arquivos']);
+    payloadStr = JSON.stringify(fullSnapshot);
+  }
+  const total = fullSnapshot.contratos.length + fullSnapshot.pagamentos.length + fullSnapshot.destinatarios.length + fullSnapshot.certidoes.length + fullSnapshot.licitacoes.length;
+  console.log('[SYNC-POST] Enviando TODOS:', total, 'registros, payload:', Math.round(payloadStr.length/1024), 'KB', skippedFiles > 0 ? '(arquivos omitidos: ' + skippedFiles + ')' : '(com anexos)');
   return getCsrfToken().then(() => {
     return fetch('/api/sync', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'}, csrfHeaders()),
-      body:JSON.stringify(snapshot)
+      body: payloadStr
     }).then(r => {
       if (r.status === 413 || r.status === 502) {
         console.error('[SYNC] Payload grande demais:', r.status);
-        mostrarToast('Arquivos grandes demais. Reduza o tamanho dos anexos.', 'erro');
+        mostrarToast('Sincronizacao com problemas. Alguns anexos podem nao ter sido enviados.', 'erro');
         return null;
       }
       if (r.status === 401) {
@@ -3258,7 +3296,7 @@ function syncToServer() {
     }).then(resp => {
       if (resp && !resp.ok) {
         console.error('[SYNC] Erro do servidor:', resp.erro)
-        mostrarToast('Erro na sincronização: ' + (resp.erro || 'desconhecido'), 'erro');
+        mostrarToast('Erro na sincronizacao: ' + (resp.erro || 'desconhecido'), 'erro');
       } else if (resp) {
         console.log('[SYNC-POST] Resposta:', resp.importados);
       }
@@ -3273,6 +3311,7 @@ function syncToServer() {
     return null;
   });
 }
+
 
 function mapServerContract(c) {
   let arquivo = null;
@@ -3822,7 +3861,8 @@ function renderCertidoes(page) {
     const stLabel = { valida: 'Válida', vencida: 'Vencida', vencendo: 'Vencendo', pendente: 'Pendente' }[st];
     const stClass = { valida: 'badge-valida', vencida: 'badge-vencido', vencendo: 'badge-pendente', pendente: 'badge-pendente' }[st];
     const arq = c.arquivo;
-    const arqBtn = arq ? `<button class="btn btn-sm btn-primary" onclick="previewCertidaoArquivo('${c.id}')" style="padding:2px 8px;font-size:0.75rem;">Ver</button><span style="font-size:0.7rem;color:#888;margin-left:4px;">${c.updated_at ? fmtData(c.updated_at.slice(0,10)) : ''}</span>` : '—';
+    const hasFile = arq && typeof arq === 'object' && !Array.isArray(arq) && arq.data;
+    const arqBtn = hasFile ? `<button class="btn btn-sm btn-primary" onclick="previewCertidaoArquivo('${c.id}')" style="padding:2px 8px;font-size:0.75rem;">Ver</button><span style="font-size:0.7rem;color:#888;margin-left:4px;">${c.updated_at ? fmtData(c.updated_at.slice(0,10)) : ''}</span>` : (arq ? `<span style="font-size:0.7rem;color:#c00;" title="Arquivo corrompido ou sem dados">⚠ Anexo</span>` : '—');
     return `<tr>
       <td>${escapeHtml(emp?.nome || '—')}</td>
       <td>${c.cnpj || '—'}</td>
@@ -3847,8 +3887,30 @@ function arquivoData(obj) {
 }
 
 window.previewCertidaoArquivo = function(id) {
-  const c = getCertidoes().find(x => x.id === id);
-  if (c && c.arquivo && c.arquivo.data) previewAnexo(c.arquivo.data, c.arquivo.name || 'arquivo');
+  try {
+    const c = getCertidoes().find(x => x.id === id);
+    if (!c) { mostrarToast('Certidao nao encontrada.', 'erro'); return; }
+    const arq = c.arquivo;
+    console.log('[CERT-ARQ] id:', id, 'arquivo type:', typeof arq, 'arquivo:', arq ? { name: arq.name, dataLen: arq.data?.length, dataStart: (arq.data || '').slice(0, 40) } : null);
+    if (arq && typeof arq === 'object' && !Array.isArray(arq) && arq.data) {
+      const name = arq.name || 'arquivo';
+      previewAnexo(arq.data, name);
+    } else if (arq && typeof arq === 'string') {
+      console.warn('[CERT-ARQ] arquivo is a string instead of object:', arq.slice(0, 100));
+      try {
+        const parsed = JSON.parse(arq);
+        if (parsed && parsed.data) { previewAnexo(parsed.data, parsed.name || 'arquivo'); return; }
+      } catch(e) {}
+      mostrarToast('Arquivo corrompido (formato invalido). Tente reenviar o anexo.', 'erro');
+    } else if (arq && arq.name && !arq.data) {
+      mostrarToast('Arquivo "' + arq.name + '" encontrado mas sem dados. O arquivo pode nao ter sido salvo corretamente.', 'erro');
+    } else {
+      mostrarToast('Nenhum arquivo anexado a esta certidao.', 'erro');
+    }
+  } catch(e) {
+    console.error('[CERT-ARQ] Erro ao abrir arquivo:', e);
+    mostrarToast('Erro ao abrir arquivo: ' + e.message, 'erro');
+  }
 }
 
 function popularFiltroEmpresaCertidoes() {
@@ -3899,6 +3961,28 @@ function popularModalCertidaoTipo() {
   });
 }
 
+const CERTIDOES_FEDERAIS = ['Cartão CNPJ Ativo (Receita Federal)', 'CND Federal'];
+function onTipoCertidaoChange() {
+  const tipo = document.getElementById('mc-tipo').value;
+  const isFederal = CERTIDOES_FEDERAIS.includes(tipo);
+  const cidGroup = document.getElementById('mc-cidade-group');
+  const cidInput = document.getElementById('mc-cidade');
+  const cidVal = document.getElementById('mc-cidade-val');
+  const cidDd = document.getElementById('mc-cidade-dropdown');
+  if (isFederal) {
+    cidInput.value = '';
+    cidVal.value = '';
+    cidInput.disabled = true;
+    cidInput.placeholder = 'Não se aplica para certidão federal';
+    cidGroup.style.opacity = '0.5';
+    if (cidDd) cidDd.innerHTML = '';
+  } else {
+    cidInput.disabled = false;
+    cidInput.placeholder = 'Selecione a UF primeiro...';
+    cidGroup.style.opacity = '1';
+  }
+}
+
 async function abrirModalCertidao(cert) {
   document.getElementById('mc-id').value = cert ? cert.id : '';
   document.getElementById('mc-empresa').value = cert ? cert.empresaId : '';
@@ -3926,6 +4010,7 @@ async function abrirModalCertidao(cert) {
     document.getElementById('mc-cidade-val').value = '';
   }
   document.getElementById('mc-tipo').value = cert ? cert.tipo : '';
+  onTipoCertidaoChange();
   document.getElementById('mc-emissao').value = cert ? (cert.dataEmissao || '') : '';
   document.getElementById('mc-validade').value = cert ? (cert.dataValidade || '') : '';
   document.getElementById('mc-status').value = cert ? (cert.status || 'pendente') : 'pendente';
@@ -3940,10 +4025,14 @@ function editarCertidao(id) {
 async function salvarCertidao() {
   const empresaId = document.getElementById('mc-empresa').value;
   const tipo = document.getElementById('mc-tipo').value;
-  if (!empresaId || !tipo) {
-    mostrarToast('Preencha Empresa e Tipo.', 'erro'); return;
-  }
   const cnpj = document.getElementById('mc-cnpj').value.trim();
+  if (!empresaId || !tipo || !cnpj) {
+    mostrarToast('Preencha todos os campos obrigatorios (*): Empresa, Tipo e CNPJ.', 'erro'); return;
+  }
+  const cnpjNumeros = cnpj.replace(/\D/g, '');
+  if (cnpjNumeros.length !== 14 && cnpjNumeros.length !== 11) {
+    mostrarToast('CNPJ/CPF invalido. Informe um CNPJ com 14 digitos ou CPF com 11 digitos.', 'erro'); return;
+  }
   const uf = document.getElementById('mc-uf-val').value;
   const cidade = document.getElementById('mc-cidade-val').value;
   const dataEmissao = document.getElementById('mc-emissao').value;
@@ -4168,11 +4257,15 @@ function editarLicitacao(id) {
 async function salvarLicitacao() {
   const numero = document.getElementById('ml-numero').value.trim();
   const objeto = document.getElementById('ml-objeto').value.trim();
-  if (!numero || !objeto) {
-    mostrarToast('Preencha No Licitacao e Objeto.', 'erro'); return;
+  const cnpj = document.getElementById('ml-cnpj').value.trim();
+  if (!numero || !objeto || !cnpj) {
+    mostrarToast('Preencha todos os campos obrigatorios (*): No Licitacao, Objeto e CNPJ.', 'erro'); return;
+  }
+  const cnpjNumeros = cnpj.replace(/\D/g, '');
+  if (cnpjNumeros.length !== 14 && cnpjNumeros.length !== 11) {
+    mostrarToast('CNPJ/CPF invalido. Informe um CNPJ com 14 digitos ou CPF com 11 digitos.', 'erro'); return;
   }
   const nomeLicitacao = document.getElementById('ml-nome').value.trim();
-  const cnpj = document.getElementById('ml-cnpj').value.trim();
   const edital = document.getElementById('ml-edital').value;
   const empresaId = document.getElementById('ml-empresa').value || null;
   const contratoId = document.getElementById('ml-contrato').value || null;
@@ -4708,12 +4801,17 @@ async function salvarContrato() {
   const numero = document.getElementById('f-numero').value.trim();
   const objeto = document.getElementById('f-objeto').value.trim();
   const parte  = document.getElementById('f-parte').value.trim();
+  const doc    = document.getElementById('f-doc').value.trim();
   const valor  = parseFloat(document.getElementById('f-valor').value) || 0;
   const inicio = document.getElementById('f-inicio').value;
   const fim    = document.getElementById('f-fim').value;
   const empresaId = document.getElementById('f-empresa').value || null;
-  if (!numero || !objeto || !parte || !inicio || !fim || !empresaId) {
-    mostrarToast('Preencha todos os campos obrigatorios (*): Numero, Empresa, Objeto, Fornecedor, Inicio e Fim.', 'erro'); return;
+  if (!numero || !objeto || !parte || !doc || !inicio || !fim || !empresaId) {
+    mostrarToast('Preencha todos os campos obrigatorios (*): Numero, Empresa, Objeto, Fornecedor, CNPJ/CPF, Inicio e Fim.', 'erro'); return;
+  }
+  const docNumeros = doc.replace(/\D/g, '');
+  if (docNumeros.length !== 14 && docNumeros.length !== 11) {
+    mostrarToast('CNPJ/CPF invalido. Informe um CNPJ com 14 digitos ou CPF com 11 digitos.', 'erro'); return;
   }
 
   _saveSyncRunning = true;
@@ -5480,6 +5578,7 @@ function calcStatusPgto(p) {
 
 function renderPagamentos(page) {
   if (page !== undefined) pgCurrentPage = page;
+  const savedSelected = getSelectedPgIds();
   const filtroContrato = document.getElementById('filtro-contrato').value;
   const filtroStatus   = document.getElementById('filtro-status').value;
   const filtroPgInicio = document.getElementById('filtro-pg-inicio')?.value || '';
@@ -5553,6 +5652,13 @@ function renderPagamentos(page) {
       <td style="display:flex;gap:4px;">${acoes}</td>
     </tr>`;
   }).join('');
+  if (savedSelected.length > 0) {
+    savedSelected.forEach(id => {
+      const cb = tb.querySelector(`.pg-checkbox[value="${id}"]`);
+      if (cb) cb.checked = true;
+    });
+    updateBatchBar();
+  }
 }
 
 window.baixarComprovante = function(id) {
@@ -6817,9 +6923,11 @@ async function excluirSelecionados() {
   if (!ids.length) { mostrarToast('Nenhum pagamento selecionado.', 'alerta'); return; }
   if (!confirm(`ATENCAO: Deseja excluir ${ids.length} pagamento(s) selecionado(s)? Esta acao nao pode ser desfeita.`)) return;
   _saveSyncRunning = true;
+  mostrarToast('Excluindo no servidor...', 'info');
   const ts = now();
   const pagamentos = getPagamentos();
-  let ok = 0;
+  let ok = 0, erro = 0;
+  await getCsrfToken();
   for (const id of ids) {
     const idx = pagamentos.findIndex(x => x.id === id);
     if (idx < 0) continue;
@@ -6828,14 +6936,20 @@ async function excluirSelecionados() {
       if (r && r.ok) {
         pagamentos[idx].deleted_at = ts; pagamentos[idx].updated_at = ts;
         ok++;
+      } else {
+        erro++;
+        console.error('[BATCH] Erro ao excluir pagamento:', id, r?.erro);
       }
-    } catch(e) {}
+    } catch(e) {
+      erro++;
+      console.error('[BATCH] Excecao ao excluir pagamento:', id, e.message);
+    }
   }
   savePagamentos(pagamentos);
   renderPagamentos();
   limparSelecao();
   _saveSyncRunning = false;
-  mostrarToast(`${ok} pagamento(s) excluido(s).`, 'sucesso');
+  mostrarToast(`${ok} pagamento(s) excluido(s).` + (erro > 0 ? ` ${erro} com erro.` : ''), ok > 0 ? 'sucesso' : 'erro');
 }
 
 // ─── PREVIEW PDF ────────────────────────────────────────────
@@ -6843,43 +6957,54 @@ let _pdfPreviewData = null;
 let _pdfPreviewName = '';
 
 function previewAnexo(base64Data, fileName) {
-  _pdfPreviewData = base64Data;
-  _pdfPreviewName = fileName;
-  
-  if (fileName.toLowerCase().endsWith('.pdf')) {
-    document.getElementById('pdf-preview-title').textContent = fileName;
-    abrirModal('modal-pdf-preview');
-    return;
-  }
-  
-  if (/\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(fileName)) {
-    document.getElementById('pdf-preview-title').textContent = fileName;
-    const body = document.getElementById('pdf-preview-body');
-    body.innerHTML = `<div style="display:flex;justify-content:center;align-items:center;padding:16px;">
-      <img src="${base64Data}" style="max-width:100%;max-height:70vh;object-fit:contain;border-radius:4px;" />
-    </div>`;
-    abrirModal('modal-pdf-preview');
-  } else {
+  try {
+    _pdfPreviewData = (typeof base64Data === 'string') ? base64Data : (base64Data ? String(base64Data) : '');
+    _pdfPreviewName = fileName || '';
+    const nameLower = (fileName || '').toLowerCase();
+    const isPdfByName = nameLower.endsWith('.pdf');
+    const isPdfByContent = !_pdfPreviewData.startsWith('data:image/') && _pdfPreviewData.startsWith('data:');
+    const isImageByName = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(fileName);
+    const isImageByContent = _pdfPreviewData.startsWith('data:image/');
+    if (isPdfByName || (isPdfByContent && !isImageByName && !isImageByContent)) {
+      document.getElementById('pdf-preview-title').textContent = fileName || 'Arquivo PDF';
+      abrirModal('modal-pdf-preview');
+      return;
+    }
+    if (isImageByName || isImageByContent) {
+      document.getElementById('pdf-preview-title').textContent = fileName || 'Imagem';
+      abrirModal('modal-pdf-preview');
+      return;
+    }
     const link = document.createElement('a');
-    link.href = base64Data;
-    link.download = fileName;
+    link.href = _pdfPreviewData;
+    link.download = fileName || 'arquivo';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     mostrarToast('Arquivo baixado.', 'sucesso');
+  } catch(e) {
+    console.error('[PREVIEW] Erro ao visualizar arquivo:', e);
+    mostrarToast('Erro ao visualizar arquivo: ' + e.message, 'erro');
   }
 }
 
 function abrirPdfNovaAba() {
-  if (!_pdfPreviewData) return;
+  if (!_pdfPreviewData || typeof _pdfPreviewData !== 'string') { mostrarToast('Arquivo nao disponivel.', 'erro'); return; }
   const raw = _pdfPreviewData.replace(/^data:[^;]*;base64,/, '');
+  if (!raw) { mostrarToast('Dados do arquivo vazios.', 'erro'); return; }
   const binary = atob(raw);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   const blob = new Blob([bytes], {type: 'application/pdf'});
   const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  const w = window.open(url, '_blank');
+  if (!w) {
+    mostrarToast('Popup bloqueado. Clique em Permitir popups e tente novamente.', 'erro');
+    downloadBase64(_pdfPreviewData, _pdfPreviewName || 'arquivo.pdf');
+    URL.revokeObjectURL(url);
+  } else {
+    setTimeout(() => URL.revokeObjectURL(url), 300000);
+  }
 }
 
 function baixarPdfPreview() {
@@ -6887,7 +7012,7 @@ function baixarPdfPreview() {
 }
 
 function imprimirPdfPreview() {
-  if (!_pdfPreviewData) return;
+  if (!_pdfPreviewData || typeof _pdfPreviewData !== 'string') return;
   const raw = _pdfPreviewData.replace(/^data:[^;]*;base64,/, '');
   const binary = atob(raw);
   const bytes = new Uint8Array(binary.length);
