@@ -828,7 +828,7 @@ async function netlifyHandler(event) {
         return json({ ok: true, msg: 'Nenhum destinatario cadastrado para enviar lembretes.' })
       }
       const { data: contratos } = await getSupabase().from('contracts').select('*')
-      const { data: pagamentos } = await getSupabase().from('payments').select('*')
+      const { data: pagamentos } = await getSupabase().from('payments').select('*').is('deleted_at', null)
       const hj = today()
 
       let enviados = 0, erros = []
