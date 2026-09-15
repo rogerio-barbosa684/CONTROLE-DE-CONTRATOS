@@ -16,6 +16,8 @@
   },
   "scripts": {
     "migrate": "node supabase/migrate.js",
-    "dev": "netlify dev"
+    "dev": "netlify dev",
+    "dev:vercel": "vercel dev",
+    "deploy:vercel": "vercel --prod"
   }
 }

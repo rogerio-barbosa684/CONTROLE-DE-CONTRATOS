@@ -42,4 +42,7 @@ PUBLICADO_NETLIFY/
 pasta1/
 erros.log
 extrator_contrato.py
+.vercel/
 
+.vercel
+.env*

@@ -1289,8 +1289,8 @@ export async function handler(event) {
       if (!numero) return json({ ok: false, erro: 'Numero do contrato e obrigatorio.' }, 400)
       const { data: existing } = await getSupabase().from('contracts').select('id').eq('id', cid).single()
       if (existing) return json({ ok: false, erro: 'Contrato ja existe com este ID.' }, 400)
-      const { data: dupNumero } = await getSupabase().from('contracts').select('id').eq('numero', numero).is('deleted_at', null).maybeSingle()
-      if (dupNumero) return json({ ok: false, erro: 'Ja existe um contrato com este numero.', contratoExistente: dupNumero.id }, 400)
+      const { data: dupNumero } = await getSupabase().from('contracts').select('id').eq('numero', numero).eq('active', 1).limit(1)
+      if (dupNumero && dupNumero.length > 0) return json({ ok: false, erro: 'Ja existe um contrato com este numero.', contratoExistente: dupNumero[0].id }, 400)
       const arquivoJson = body.arquivo ? JSON.stringify(body.arquivo) : null
       const pgtoConfig = body.pgtoConfig || {}
       const vals = {
@@ -1499,6 +1499,13 @@ export async function handler(event) {
         const authErr = requireAuth(user)
         if (authErr) return authErr
         const since = queryParams.since || null
+        const safeQuery = async (label, fn) => {
+          try {
+            const r = await fn()
+            if (r.error) { console.error(`[SYNC-GET] Erro em ${label}:`, r.error.message); return [] }
+            return r.data || []
+          } catch (e) { console.error(`[SYNC-GET] Excecao em ${label}:`, e.message); return [] }
+        }
         const sq = (tbl) => {
           let q = getSupabase().from(tbl).select('*')
           if (since) {
@@ -1518,28 +1525,20 @@ export async function handler(event) {
           return q
         }
         const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios, certidoes, licitacoes, sectors, userSetores] = await Promise.all([
-          sqContracts().order('created_at', { ascending: false }),
-          sq('payments').order('vencimento'),
-          getSupabase().from('users').select('id, username, full_name, role, created_at').order('id'),
-          sq('additives').order('created_at'),
-          getSupabase().from('companies').select('*').order('nome'),
-          sq('destinatarios').order('criado_em'),
-          sq('certidoes').order('criado_em', { ascending: false }),
-          sq('licitacoes').order('criado_em', { ascending: false }),
-          getSupabase().from('sectors').select('*').order('nome'),
-          getSupabase().from('user_setores').select('*'),
+          safeQuery('contracts', () => sqContracts().order('created_at', { ascending: false })),
+          safeQuery('payments', () => sq('payments').order('vencimento')),
+          safeQuery('users', () => getSupabase().from('users').select('id, username, full_name, role, created_at').order('id')),
+          safeQuery('additives', () => sq('additives').order('created_at')),
+          safeQuery('companies', () => getSupabase().from('companies').select('*').order('nome')),
+          safeQuery('destinatarios', () => sq('destinatarios').order('criado_em')),
+          safeQuery('certidoes', () => sq('certidoes').order('criado_em', { ascending: false })),
+          safeQuery('licitacoes', () => sq('licitacoes').order('criado_em', { ascending: false })),
+          safeQuery('sectors', () => getSupabase().from('sectors').select('*').order('nome')),
+          safeQuery('user_setores', () => getSupabase().from('user_setores').select('*')),
         ])
         return json({
-          contratos: contratos.data || [],
-          pagamentos: pagamentos.data || [],
-          usuarios: usuarios.data || [],
-          aditivos: aditivos.data || [],
-          empresas: empresas.data || [],
-          destinatarios: destinatarios.data || [],
-          certidoes: certidoes.data || [],
-          licitacoes: licitacoes.data || [],
-          sectors: sectors.data || [],
-          user_setores: userSetores.data || [],
+          contratos, pagamentos, usuarios, aditivos, empresas,
+          destinatarios, certidoes, licitacoes, sectors, user_setores: userSetores,
           server_now: new Date().toISOString()
         })
       }
@@ -1600,8 +1599,8 @@ export async function handler(event) {
               }
             } else {
               if (incomingDeleted) { importados.contratos++; continue }
-              const { data: dupNum } = await getSupabase().from('contracts').select('id').eq('numero', numero).is('deleted_at', null).maybeSingle()
-              if (dupNum) { importados.ignorados++; continue }
+              const { data: dupNum } = await getSupabase().from('contracts').select('id').eq('numero', numero).eq('active', 1).limit(1)
+              if (dupNum && dupNum.length > 0) { importados.ignorados++; continue }
               const vals = {
                 numero, fornecedor: (c.parte || '').trim(), cnpj: (c.doc || '').trim(),
                 objeto: (c.objeto || '').trim(), valor_total: parseFloat(c.valor || 0),

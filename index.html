@@ -7143,8 +7143,9 @@ function syncRealtime() {
     if (indicator) { indicator.style.color = '#f66'; indicator.textContent = '● Falha sync - retentando...'; }
   });
 }
-setInterval(syncRealtime, 30000);
-setInterval(() => { if (_pendingSync && !_syncRunning && !_saveSyncRunning) syncRealtime(); }, 10000);
+setInterval(syncRealtime, 300000);
+window.addEventListener('focus', () => { if (sessionStorage.getItem('logged_in') === 'true' && !_syncRunning) syncRealtime(); });
+setInterval(() => { if (_pendingSync && !_syncRunning && !_saveSyncRunning) syncRealtime(); }, 30000);
 </script>
 <script>
 (function() {
