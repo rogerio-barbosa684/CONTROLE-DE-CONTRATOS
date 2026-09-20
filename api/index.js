@@ -2,29 +2,11 @@ import { createClient } from '@supabase/supabase-js'
 import jwt from 'jsonwebtoken'
 import nodemailer from 'nodemailer'
 import crypto from 'crypto'
-import WebSocket from 'ws'
-
-if (typeof globalThis.WebSocket === 'undefined') {
-  globalThis.WebSocket = WebSocket
-}
 
 const JWT_SECRET = process.env.JWT_SECRET
 
 const forgotPasswordAttempts = new Map()
-const loginAttempts = new Map()
 
-function checkLoginRateLimit(ip) {
-  const now = Date.now()
-  const windowMs = 60 * 1000
-  const maxAttempts = 10
-  const record = loginAttempts.get(ip)
-  if (!record || (now - record.start) > windowMs) {
-    loginAttempts.set(ip, { start: now, count: 1 })
-    return true
-  }
-  record.count++
-  return record.count <= maxAttempts
-}
 function checkForgotPasswordRateLimit(ip) {
   const now = Date.now()
   const windowMs = 60 * 1000
@@ -46,7 +28,7 @@ function getSupabase() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) {
     console.error('SUPABASE_URL:', url ? 'OK' : 'MISSING', 'SUPABASE_SERVICE_ROLE_KEY:', key ? 'OK' : 'MISSING')
-    throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY devem estar configurados nas variaveis de ambiente do Netlify.')
+    throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY devem estar configurados nas variaveis de ambiente do Vercel.')
   }
   console.log('Connecting to Supabase:', url)
   _supabase = createClient(url, key, { realtime: { eventsPerSecond: 0 } })
@@ -567,7 +549,7 @@ async function enviarEmail(cfg, html, assunto, destinatario) {
 
 // ─── ROUTER ────────────────────────────────────────────────────────────────
 
-async function netlifyHandler(event) {
+async function vercelHandler(event) {
   const { path, httpMethod, headers, body: rawBody } = event
   let body = {}
   if (event._rawParsedBody) {
@@ -652,11 +634,6 @@ async function netlifyHandler(event) {
 
     // ─── LOGIN ───────────────────────────────────────────────────────────
     if (route === 'login' && httpMethod === 'POST') {
-      const clientIp = headers['x-forwarded-for'] || headers['client-ip'] || 'unknown'
-      // Rate limit temporarily disabled for local dev
-      // if (!checkLoginRateLimit(clientIp)) {
-      //   return json({ ok: false, erro: 'Muitas tentativas. Aguarde 1 minuto.' }, 429)
-      // }
       if (!JWT_SECRET) {
         return json({ ok: false, erro: 'JWT_SECRET nao configurado no servidor.' }, 500)
       }
@@ -670,14 +647,12 @@ async function netlifyHandler(event) {
       }
 
       let authenticated = false
+      const adminUser = process.env.ADMIN_USER || 'admin'
+      const adminPass = process.env.ADMIN_PASSWORD
 
-      if (dbUser) {
-        authenticated = await checkPassword(password, dbUser.password_hash)
-      } else {
-        const adminUser = process.env.ADMIN_USER || 'admin'
-        const adminPass = process.env.ADMIN_PASSWORD
-        if (username === adminUser && adminPass && password === adminPass) {
-          authenticated = true
+      if (username === adminUser && adminPass && password === adminPass) {
+        authenticated = true
+        if (!dbUser) {
           dbUser = { id: 1, username: adminUser, full_name: 'Administrador', role: 'admin', active: 1, password_hash: '' }
           hashPassword(password).then(hash => {
             getSupabase().from('users').upsert({
@@ -687,6 +662,8 @@ async function netlifyHandler(event) {
             }).then(() => console.log('Admin user saved to Supabase')).catch(e => console.error('Could not persist admin user:', e.message))
           }).catch(() => {})
         }
+      } else if (dbUser) {
+        authenticated = await checkPassword(password, dbUser.password_hash)
       }
 
       if (!authenticated || !dbUser) {
@@ -735,7 +712,7 @@ async function netlifyHandler(event) {
       const cfg = await getEmailConfig()
       const emailTo = dbUser.email || cfg.email_remetente
       if (cfg.email_remetente && cfg.email_senha && emailTo) {
-        const resetUrl = `https://${headers.host || 'contratosidealalimentacao.netlify.app'}/?reset_token=${token}`
+        const resetUrl = `https://${headers.host || 'controle-de-contratos-omega.vercel.app'}/?reset_token=${token}`
         const html = `<h2>Redefinicao de Senha</h2><p>Ola ${escapeHtml(dbUser.full_name)},</p><p>Clique no link abaixo para redefinir sua senha:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>Este link expira em 1 hora.</p><p>Se voce nao solicitou esta redefinicao, ignore este email.</p>`
         try { await enviarEmail(cfg, html, 'Redefinicao de Senha - Controle de Contratos', emailTo) } catch {}
       }
@@ -989,7 +966,7 @@ async function netlifyHandler(event) {
       if (authErr) return authErr
       const adminErr = requireAdmin(user)
       if (adminErr) return adminErr
-      const { data: users } = await getSupabase().from('users').select('id, username, full_name, role, active, created_at').order('id')
+      const { data: users } = await getSupabase().from('users').select('id, username, full_name, email, role, active, created_at').order('id')
       return json(users)
     }
 
@@ -1235,20 +1212,6 @@ async function netlifyHandler(event) {
       return json({ ok: true })
     }
 
-    // ─── CONTRACTS PUT ───────────────────────────────────────────────────
-    if (parts[0] === 'contracts' && parts[1] && httpMethod === 'PUT') {
-      const authErr = requireAuth(user)
-      if (authErr) return authErr
-      if (!validateCsrf(user, body.csrf_token)) {
-        return json({ ok: false, erro: 'CSRF invalido' }, 403)
-      }
-      const upd = {}
-      if (body.active !== undefined) upd.active = body.active ? 1 : 0
-      upd.updated_at = new Date().toISOString()
-      await getSupabase().from('contracts').update(upd).eq('id', parts[1])
-      return json({ ok: true })
-    }
-
     // ─── CONTRACTS DELETE ────────────────────────────────────────────────
     if (parts[0] === 'contracts' && parts[1] && httpMethod === 'DELETE') {
       const authErr = requireAuth(user)
@@ -1341,6 +1304,7 @@ async function netlifyHandler(event) {
       if (!validateCsrf(user, body.csrf_token)) {
         return json({ ok: false, erro: 'CSRF invalido' }, 403)
       }
+      console.log('[CONTRACT-PUT] id:', parts[1], 'body keys:', Object.keys(body).join(','), 'arquivoLen:', body.arquivo ? String(body.arquivo).length : 0)
       const upd = {}
       if (body.active !== undefined) upd.active = body.active ? 1 : 0
       if (body.numero !== undefined) upd.numero = (body.numero || '').trim()
@@ -1366,7 +1330,9 @@ async function netlifyHandler(event) {
       }
       if (body.arquivo !== undefined) upd.arquivo_contrato = body.arquivo ? JSON.stringify(body.arquivo) : null
       upd.updated_at = new Date().toISOString()
-      await getSupabase().from('contracts').update(upd).eq('id', parts[1])
+      const { error: updErr } = await getSupabase().from('contracts').update(upd).eq('id', parts[1])
+      if (updErr) { console.error('[CONTRACT-PUT] Supabase error:', updErr.message); return json({ ok: false, erro: updErr.message }, 500) }
+      console.log('[CONTRACT-PUT] OK id:', parts[1], 'fields:', Object.keys(upd).join(','))
       await audit(user.id, 'UPDATE', 'contract', parts[1], `Contrato ${parts[1]} atualizado`)
       return json({ ok: true })
     }
@@ -1516,8 +1482,14 @@ async function netlifyHandler(event) {
             return r.data || []
           } catch (e) { console.error(`[SYNC-GET] Excecao em ${label}:`, e.message); return [] }
         }
-        const sq = (tbl) => {
-          let q = getSupabase().from(tbl).select('*')
+        const CONTRACT_COLS = 'id,numero,fornecedor,cnpj,objeto,valor_total,inicio,fim,tem_parcelas,qtd_parcelas,valor_parcela,dia_vencimento,responsavel,setor,obs,tipo,empresa_id,active,forma_pagamento,created_by,created_at,updated_at,arquivo_contrato'
+        const PAYMENT_COLS = 'id,contract_id,descricao,vencimento,valor,contrato_num,data_pagamento,valor_pago,forma_pagamento,status,obs,created_by,paid_by,created_at,updated_at,deleted_at,comprovante'
+        const ADDITIVE_COLS = 'id,contract_id,numero,data_aditivo,tipo,nova_data_fim,acrescimo_valor,descricao,created_by,created_at,updated_at,deleted_at,arquivo_contrato'
+        const CERTIDAO_COLS = 'id,empresa_id,cnpj,uf,cidade,tipo,data_emissao,data_validade,status,arquivo_nome,arquivo_dados,observacoes,criado_em,updated_at,deleted_at'
+        const LICITACAO_COLS = 'id,empresa_id,numero_licitacao,edital,nome_licitacao,cnpj,objeto,contrato_id,valor,data_homologacao,data_inicio,data_fim,status,observacoes,criado_em,updated_at,deleted_at'
+        const DEST_COLS = 'id,email,nome,empresa_ids,setores,alertas,criado_em,updated_at,deleted_at'
+        const sq = (tbl, cols) => {
+          let q = getSupabase().from(tbl).select(cols)
           if (since) {
             q = q.gt('updated_at', since)
           } else {
@@ -1526,7 +1498,7 @@ async function netlifyHandler(event) {
           return q
         }
         const sqContracts = () => {
-          let q = getSupabase().from('contracts').select('*')
+          let q = getSupabase().from('contracts').select(CONTRACT_COLS)
           if (since) {
             q = q.gt('updated_at', since)
           } else {
@@ -1534,23 +1506,42 @@ async function netlifyHandler(event) {
           }
           return q
         }
-        const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios, certidoes, licitacoes, sectors, userSetores] = await Promise.all([
-          safeQuery('contracts', () => sqContracts().order('created_at', { ascending: false })),
-          safeQuery('payments', () => sq('payments').order('vencimento')),
-          safeQuery('users', () => getSupabase().from('users').select('id, username, full_name, role, created_at').order('id')),
-          safeQuery('additives', () => sq('additives').order('created_at')),
-          safeQuery('companies', () => getSupabase().from('companies').select('*').order('nome')),
-          safeQuery('destinatarios', () => sq('destinatarios').order('criado_em')),
-          safeQuery('certidoes', () => sq('certidoes').order('criado_em', { ascending: false })),
-          safeQuery('licitacoes', () => sq('licitacoes').order('criado_em', { ascending: false })),
-          safeQuery('sectors', () => getSupabase().from('sectors').select('*').order('nome')),
-          safeQuery('user_setores', () => getSupabase().from('user_setores').select('*')),
-        ])
-        return json({
+        console.log('[SYNC-GET] Iniciando queries... since:', since)
+        const t0 = Date.now()
+        const queries = [
+          ['contracts', () => sqContracts().order('created_at', { ascending: false })],
+          ['payments', () => sq('payments', PAYMENT_COLS).order('vencimento')],
+          ['users', () => getSupabase().from('users').select('id, username, full_name, role, created_at').order('id')],
+          ['additives', () => sq('additives', ADDITIVE_COLS).order('created_at')],
+          ['companies', () => getSupabase().from('companies').select('*').order('nome')],
+          ['destinatarios', () => sq('destinatarios', DEST_COLS).order('criado_em')],
+          ['certidoes', () => sq('certidoes', CERTIDAO_COLS).order('criado_em', { ascending: false })],
+          ['licitacoes', () => sq('licitacoes', LICITACAO_COLS).order('criado_em', { ascending: false })],
+          ['sectors', () => getSupabase().from('sectors').select('*').order('nome')],
+          ['user_setores', () => getSupabase().from('user_setores').select('*')],
+        ]
+        const results = []
+        for (const [label, fn] of queries) {
+          const tq = Date.now()
+          const r = await safeQuery(label, fn)
+          console.log(`[SYNC-GET] ${label}: ${r.length} rows (${Date.now() - tq}ms)`)
+          results.push(r)
+        }
+        console.log('[SYNC-GET] Total queries:', Date.now() - t0, 'ms')
+        const [contratos, pagamentos, usuarios, aditivos, empresas, destinatarios, certidoes, licitacoes, sectors, userSetores] = results
+        const resp = {
           contratos, pagamentos, usuarios, aditivos, empresas,
           destinatarios, certidoes, licitacoes, sectors, user_setores: userSetores,
           server_now: new Date().toISOString()
-        })
+        }
+        const respSize = Math.round(JSON.stringify(resp).length / 1024)
+        console.log('[SYNC-GET] Respondendo:', contratos.length, 'contratos,', pagamentos.length, 'pagamentos,', respSize, 'KB')
+        if (respSize > 3500) {
+          console.warn('[SYNC-GET] Resposta muito grande, truncando...')
+          resp.contratos = resp.contratos.slice(0, 200)
+          resp.pagamentos = resp.pagamentos.slice(0, 200)
+        }
+        return json(resp)
       }
 
       if (httpMethod === 'POST') {
@@ -1802,7 +1793,7 @@ async function netlifyHandler(event) {
             }
             const incomingUpdatedCt = ct.updated_at || ct.criadoEm || new Date().toISOString()
             const incomingDeletedCt = ct.deleted_at || null
-            const { data: existing } = await getSupabase().from('certidoes').select('id, updated_at').eq('id', ctid).single()
+            const { data: existing } = await getSupabase().from('certidoes').select('id, updated_at, deleted_at').eq('id', ctid).single()
             const vals = {
               empresa_id: ct.empresaId || '',
               cnpj: (ct.cnpj || '').trim(),
@@ -1816,13 +1807,17 @@ async function netlifyHandler(event) {
             if (arquivoNomeStr) vals.arquivo_nome = arquivoNomeStr
             if (arquivoDadosStr) vals.arquivo_dados = arquivoDadosStr
             if (existing) {
+              if (existing.deleted_at) {
+                importados.certidoes = (importados.certidoes || 0) + 1
+                continue
+              }
               const existingUpdatedCt = existing.updated_at || ''
               if (incomingUpdatedCt <= existingUpdatedCt && !incomingDeletedCt) {
                 importados.certidoes = (importados.certidoes || 0) + 1
                 continue
               }
               if (incomingDeletedCt) {
-                await getSupabase().from('certidoes').delete().eq('id', ctid)
+                await getSupabase().from('certidoes').update({ deleted_at: incomingDeletedCt, updated_at: incomingUpdatedCt }).eq('id', ctid)
               } else {
                 const { error } = await getSupabase().from('certidoes').update(vals).eq('id', ctid)
                 if (error) { await audit(user.id, 'SYNC_ERROR', 'certidoes', ctid, `Update: ${error.message}`); importados.ignorados++; continue }
@@ -1846,7 +1841,7 @@ async function netlifyHandler(event) {
           try {
             const incomingUpdatedLc = lc.updated_at || lc.criadoEm || new Date().toISOString()
             const incomingDeletedLc = lc.deleted_at || null
-            const { data: existing } = await getSupabase().from('licitacoes').select('id, updated_at').eq('id', lcid).single()
+            const { data: existing } = await getSupabase().from('licitacoes').select('id, updated_at, deleted_at').eq('id', lcid).single()
             const arquivos = []
             if (lc.arquivoEdital) arquivos.push({ ...lc.arquivoEdital, tipo: 'edital' })
             if (lc.arquivoContrato) arquivos.push({ ...lc.arquivoContrato, tipo: 'contrato' })
@@ -1862,13 +1857,17 @@ async function netlifyHandler(event) {
             }
             if (arquivos.length > 0) vals.arquivos = JSON.stringify(arquivos)
             if (existing) {
+              if (existing.deleted_at) {
+                importados.licitacoes = (importados.licitacoes || 0) + 1
+                continue
+              }
               const existingUpdatedLc = existing.updated_at || ''
               if (incomingUpdatedLc <= existingUpdatedLc && !incomingDeletedLc) {
                 importados.licitacoes = (importados.licitacoes || 0) + 1
                 continue
               }
               if (incomingDeletedLc) {
-                await getSupabase().from('licitacoes').delete().eq('id', lcid)
+                await getSupabase().from('licitacoes').update({ deleted_at: incomingDeletedLc, updated_at: incomingUpdatedLc }).eq('id', lcid)
               } else {
                 const { error } = await getSupabase().from('licitacoes').update(vals).eq('id', lcid)
                 if (error) { await audit(user.id, 'SYNC_ERROR', 'licitacoes', lcid, error.message); importados.ignorados++; continue }
@@ -1975,6 +1974,8 @@ async function netlifyHandler(event) {
       if (body.arquivo_nome !== undefined) upd.arquivo_nome = body.arquivo_nome
       if (body.arquivo_dados !== undefined) upd.arquivo_dados = body.arquivo_dados
       if (body.obs !== undefined) upd.observacoes = body.obs
+      if (body.deleted_at !== undefined) upd.deleted_at = body.deleted_at || null
+      upd.updated_at = new Date().toISOString()
       const { error } = await getSupabase().from('certidoes').update(upd).eq('id', parts[1])
       if (error) return json({ ok: false, erro: error.message }, 500)
       await audit(user.id, 'UPDATE', 'certidao', parts[1], `Certidao atualizada`)
@@ -2110,6 +2111,7 @@ async function netlifyHandler(event) {
 
 // ─── VERCEL HANDLER (adapter) ─────────────────────────────────────────────
 export default async function handler(req, res) {
+  console.log(`[VERCEL] ${req.method} ${req.url} start=${Date.now()}`)
   try {
     let rawBody = ''
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -2128,7 +2130,7 @@ export default async function handler(req, res) {
       _rawParsedBody: typeof req.body === 'object' ? req.body : null
     }
 
-    const result = await netlifyHandler(event)
+    const result = await vercelHandler(event)
 
     if (result.headers) {
       for (const [k, v] of Object.entries(result.headers)) {
